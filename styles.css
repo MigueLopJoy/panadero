@@ -254,3 +254,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 .hid-row-rem .hid-row-label{color:var(--blue)}
 .hid-row-rem .hid-row-grams{color:var(--blue)}
 .hid-row-zero{opacity:.45}
+
+/* ── ELABORACIONES: ingrediente con hidratación propia ── */
+.eeb-ei-block{margin-bottom:.55rem;padding-bottom:.45rem;border-bottom:1px dashed var(--border2)}
+.eeb-ei-block:last-child{border-bottom:none;padding-bottom:0}

@@ -133,6 +133,9 @@ function calcDetail(){
   const fsum=(r.flours||[]).reduce((s,f)=>s+(parseFloat(f.pct)||0),0);
   if(Math.abs(fsum-100)>0.01){ errEl.textContent='Las harinas suman '+fsum.toFixed(1)+'% (deben sumar exactamente 100%).'; errEl.classList.add('show'); return; }
 
+  const elabErr=validateElabs(r.ings||[], r.elabs||[]);
+  if(elabErr){ errEl.textContent=elabErr; errEl.classList.add('show'); }
+
   const totalMass=pieces*unitW;
   const otherPct=(r.ings||[]).reduce((s,i)=>s+(parseFloat(i.pct)||0),0);
   const flourG=totalMass/(1+otherPct/100);
@@ -183,6 +186,14 @@ function calcDetail(){
         if(ei.ingId!=null) deductO[ei.ingId]=(deductO[ei.ingId]||0)+grams;
         const iname=(r.ings||[]).find(i=>i.id===ei.ingId)?.name||ei.name||'Ingrediente';
         elabIngs.push({name:iname, grams, type:'other', pctDesc:(parseFloat(ei.pct)||0).toFixed(1)+'% s/harina receta'});
+        // hidratación propia del ingrediente (% s/ su peso): agua que se descuenta del agua total
+        const hyd=parseFloat(ei.hyd)||0;
+        if(hyd>0){
+          const wg=grams*hyd/100;
+          deductW+=wg;
+          elabIngs.push({name:'Agua ('+iname+')', grams:wg, type:'water', pctDesc:hyd.toFixed(1)+'% s/ '+iname});
+          grams+=wg;
+        }
       }
       elabTotal+=grams;
     });
@@ -596,7 +607,7 @@ function rRenderFlours(){
 // Ings
 function rAddIng(n='',p=0){ rIngs.push({id:rIId++,name:n,pct:p}); rRenderIngs(); rRenderElabs(); }
 function rDelIng(id){ rIngs=rIngs.filter(x=>x.id!==id); rRenderIngs(); rRenderElabs(); }
-function rSetIng(id,f,v){ const x=rIngs.find(x=>x.id===id); if(x) x[f]=f==='name'?v:(parseFloat(v)||0); }
+function rSetIng(id,f,v){ const x=rIngs.find(x=>x.id===id); if(x) x[f]=f==='name'?v:(parseFloat(v)||0); rRenderElabs(); }
 function rRenderIngs(){
   const el=document.getElementById('r_ing_list'); el.innerHTML='';
   rIngs.forEach(i=>{
@@ -623,7 +634,7 @@ function rAddElabIng(elabId,type){
   const ei={id:rEIId++,type};
   if(type==='flour'){ ei.flourId=rFlours[0]?.id??null; ei.pct=20; }
   else if(type==='water'){ ei.pct=30; }
-  else { ei.ingId=rIngs[0]?.id??null; ei.name=''; ei.pct=1; }
+  else { ei.ingId=rIngs.find(i=>!isWaterName(i.name))?.id??null; ei.name=''; ei.pct=1; ei.hyd=0; }
   e.ings.push(ei);
   rRenderElabs();
 }
@@ -637,7 +648,85 @@ function rSetElabIng(elabId,eiId,field,val){
   const ei=e.ings.find(x=>x.id===eiId); if(!ei) return;
   if(field==='flourId'||field==='ingId'){ ei[field]=parseInt(val); rRenderElabs(); }
   else if(field==='name') ei.name=val;
-  else ei[field]=parseFloat(val)||0;
+  else { ei[field]=parseFloat(val)||0; rRefreshInfo(); }
+}
+
+// ── Helpers de ingredientes con hidratación propia ──
+function isWaterName(n){ return /^agua$/i.test((n||'').trim()); }
+// Agua total asignada a elaboraciones, en % s/harina total de la receta (único punto de cálculo)
+function elabWaterPct(elabs){
+  let used=0;
+  (elabs||[]).forEach(elab=>{
+    let fp=0;
+    (elab.ings||[]).forEach(ei=>{
+      const p=parseFloat(ei.pct)||0;
+      if(ei.type==='flour') fp+=p;
+      else if(ei.type==='water') used+=fp*p/100;
+      else used+=p*(parseFloat(ei.hyd)||0)/100;
+    });
+  });
+  return used;
+}
+// Disponible (en %) de un ingrediente, descontando lo asignado en otras filas
+function ingAvailPct(ings,elabs,ingId,excludeEiId){
+  const ing=ings.find(i=>i.id===ingId); if(!ing) return 0;
+  let used=0;
+  (elabs||[]).forEach(e=>(e.ings||[]).forEach(ei=>{ if(ei.type==='other'&&ei.ingId===ingId&&ei.id!==excludeEiId) used+=parseFloat(ei.pct)||0; }));
+  return Math.max(0,(parseFloat(ing.pct)||0)-used);
+}
+// Validación de lógica de negocio (compartida por editor y cálculo). Devuelve texto de error o null.
+function validateElabs(ings,elabs){
+  const used={};
+  for(const elab of (elabs||[])){
+    for(const ei of (elab.ings||[])){
+      const p=parseFloat(ei.pct);
+      if(!isFinite(p)||p<0) return 'La elaboración "'+elab.name+'" tiene un porcentaje no válido.';
+      if(ei.type!=='other') continue;
+      const ing=ings.find(i=>i.id===ei.ingId);
+      if(!ing) return 'La elaboración "'+elab.name+'" usa un ingrediente que ya no existe en la receta. Elige otro o elimínalo.';
+      const h=ei.hyd==null||ei.hyd===''?0:parseFloat(ei.hyd);
+      if(!isFinite(h)||h<0) return 'La hidratación de "'+ing.name+'" en "'+elab.name+'" no es válida.';
+      used[ing.id]=(used[ing.id]||0)+p;
+      const max=parseFloat(ing.pct)||0;
+      if(used[ing.id]>max+0.01) return '"'+ing.name+'" representa el '+max.toFixed(2)+'% de la receta, pero las elaboraciones previas le asignan en total el '+used[ing.id].toFixed(2)+'%. Reduce los porcentajes.';
+    }
+  }
+  const wing=ings.find(i=>isWaterName(i.name));
+  const wMax=wing?parseFloat(wing.pct)||0:0;
+  const wUsed=elabWaterPct(elabs);
+  if(wUsed>wMax+0.01) return 'Las elaboraciones previas necesitan un '+wUsed.toFixed(2)+'% de agua (s/harina total), pero la receta solo tiene un '+wMax.toFixed(2)+'%. Reduce la hidratación o añade agua a la receta.';
+  return null;
+}
+function rBaseFlourG(){
+  const r=editingId?recipes.find(x=>x.id===editingId):null;
+  if(!r||!r.weight||!r.pieces) return null;
+  const other=rIngs.reduce((s,i)=>s+(parseFloat(i.pct)||0),0);
+  return r.weight*r.pieces/(1+other/100);
+}
+function otherInfoText(ei){
+  const ing=rIngs.find(i=>i.id===ei.ingId); if(!ing) return '';
+  const p=parseFloat(ei.pct)||0, h=parseFloat(ei.hyd)||0;
+  const avail=ingAvailPct(rIngs,rElabs,ei.ingId,ei.id);
+  const F=rBaseFlourG();
+  let t='';
+  if(F){ const g=F*p/100; t+=g.toFixed(1)+' g de '+ing.name+(h>0?' + '+(g*h/100).toFixed(1)+' g de agua':'')+' · '; }
+  else if(h>0) t+='Agua: '+(p*h/100).toFixed(2)+'% s/harina total · ';
+  t+='Quedan '+Math.max(0,avail-p).toFixed(2)+'% de '+ing.name+' para masa final u otras elaboraciones';
+  return t;
+}
+function rRefreshInfo(){
+  rElabs.forEach(elab=>(elab.ings||[]).forEach(ei=>{
+    if(ei.type!=='other') return;
+    const info=document.getElementById('ei_info_'+ei.id); if(info) info.textContent=otherInfoText(ei);
+    const inp=document.getElementById('ei_pct_'+ei.id); if(inp) inp.max=ingAvailPct(rIngs,rElabs,ei.ingId,ei.id);
+  }));
+  const wi=document.getElementById('r_water_info');
+  if(wi){
+    const used=elabWaterPct(rElabs);
+    const w=rIngs.find(i=>isWaterName(i.name)); const tot=w?parseFloat(w.pct)||0:0;
+    wi.textContent=rElabs.length&&used>0?'Agua asignada a elaboraciones: '+used.toFixed(2)+'% de '+tot.toFixed(2)+'% (s/harina total)':'';
+    wi.style.color=used>tot+0.01?'var(--red)':'';
+  }
 }
 
 function rRenderElabSelects(){ rRenderElabs(); }
@@ -684,13 +773,24 @@ function rRenderElabs(){
           <button class="btn btn-icon btn-ghost" onclick="rDelElabIng(${elab.id},${ei.id})"><svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
         </div>`;
       } else {
-        ingRows+=`<div class="eeb-ing-row">
+        const avail=ingAvailPct(rIngs,rElabs,ei.ingId,ei.id);
+        const opts=rIngs.filter(i=>!isWaterName(i.name)||i.id===ei.ingId);
+        ingRows+=`<div class="eeb-ei-block">
+        <div class="eeb-ing-row">
           <select style="font-size:.82rem;padding:.4rem .6rem;padding-right:1.8rem" onchange="rSetElabIng(${elab.id},${ei.id},'ingId',this.value)">
-            ${rIngs.map(i=>`<option value="${i.id}"${i.id===ei.ingId?' selected':''}>${esc(i.name||'Ingrediente')}</option>`).join('')}
+            ${opts.map(i=>`<option value="${i.id}"${i.id===ei.ingId?' selected':''}>${esc(i.name||'Ingrediente')}</option>`).join('')}
           </select>
-          <input type="number" value="${ei.pct}" min="0" step="0.01" placeholder="% s/harina" oninput="rSetElabIng(${elab.id},${ei.id},'pct',this.value)">
+          <input type="number" id="ei_pct_${ei.id}" value="${ei.pct}" min="0" max="${avail}" step="0.01" placeholder="% s/harina" oninput="rSetElabIng(${elab.id},${ei.id},'pct',this.value)">
           <span style="font-size:.68rem;color:var(--text3);display:flex;align-items:center;padding:0 3px">% s/harina</span>
           <button class="btn btn-icon btn-ghost" onclick="rDelElabIng(${elab.id},${ei.id})"><svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+        </div>
+        <div class="eeb-ing-row">
+          <span style="font-size:.72rem;color:var(--text2);padding-left:.2rem">Hidratación</span>
+          <input type="number" value="${ei.hyd||0}" min="0" step="1" placeholder="% s/ingrediente" oninput="rSetElabIng(${elab.id},${ei.id},'hyd',this.value)">
+          <span style="font-size:.68rem;color:var(--text3);display:flex;align-items:center;padding:0 3px">% s/ingrediente</span>
+          <span></span>
+        </div>
+        <div class="field-hint" id="ei_info_${ei.id}"></div>
         </div>`;
       }
     });
@@ -709,10 +809,11 @@ function rRenderElabs(){
       <div style="display:flex;gap:5px;margin-top:.5rem;flex-wrap:wrap">
         <button class="btn btn-xs" onclick="rAddElabIng(${elab.id},'flour')" ${!rFlours.length?'disabled':''}>+ Harina</button>
         <button class="btn btn-xs" onclick="rAddElabIng(${elab.id},'water')">+ Agua</button>
-        <button class="btn btn-xs" onclick="rAddElabIng(${elab.id},'other')" ${!rIngs.length?'disabled title="Añade primero otros ingredientes a la receta"':''}>+ Otro ingrediente</button>
+        <button class="btn btn-xs" onclick="rAddElabIng(${elab.id},'other')" ${!rIngs.some(i=>!isWaterName(i.name))?'disabled title="Añade primero otros ingredientes a la receta"':''}>+ Otro ingrediente</button>
       </div>`;
     el.appendChild(div);
   });
+  rRefreshInfo();
 }
 
 function saveRecipe(){
@@ -749,6 +850,8 @@ function saveRecipe(){
       }
     }
   }
+  const elabErr=validateElabs(rIngs,rElabs);
+  if(elabErr){ alert(elabErr); return; }
   const recId = editingId || uid();
   const existing=editingId?recipes.find(x=>x.id===editingId):null;
   const rec={
