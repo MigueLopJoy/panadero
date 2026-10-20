@@ -1,10 +1,10 @@
 const {JSDOM}=require('jsdom');const fs=require('fs');
-const html=fs.readFileSync('index.html','utf8').replace(/<script src="scripts.js"><\/script>/,'').replace(/<link[^>]*>/g,'');
+const html=fs.readFileSync('index.html','utf8').replace(/<script src="[^"]+"><\/script>/g,'').replace(/<link[^>]*>/g,'');
 function boot(stored){
   const dom=new JSDOM(html,{runScripts:'outside-only',url:'http://localhost/'});
   const w=dom.window; w.alert=m=>{w.__alert=m};
   if(stored) w.localStorage.setItem('pan_v4',JSON.stringify(stored));
-  w.eval(fs.readFileSync('scripts.js','utf8')+';window.__x=c=>eval(c);window.__s={get lc(){return lastCalc},set aid(v){activeId=v},load,calcDetail,showDetail,validateElabs,get recipes(){return recipes}}');
+  w.eval(fs.readFileSync('scripts.js','utf8')+ '\n'+fs.readFileSync('production.js','utf8')+'\n'+fs.readFileSync('excel-export.js','utf8')+';window.__x=c=>eval(c);window.__s={get lc(){return lastCalc},set aid(v){activeId=v},load,calcDetail,showDetail,validateElabs,get recipes(){return recipes},calculateVariant,calculateProduction,calculateRecipeFormula,baseFactor,productionIngredients,productionWorkbookData,workbookParts,planFor,importRecipeData}');
   return w;
 }
 let fails=0;const ok=(n,c,x)=>{console.log((c?'PASS ':'FAIL ')+n+(c?'':' -> '+x));if(!c)fails++};
@@ -79,4 +79,71 @@ ok('agua con base inexistente señalada',/ya no está/.test(S0.validateElabs(rr.
 // migración de hyd intermedio
 r=base();r.elabs=[{id:1,name:'Remojo',ings:[{id:2,type:'other',ingId:1,pct:15,hyd:100}]}];
 t=run(r);ok('migración hyd->fila de agua: 150 g agua, total 1920',near(t.lc.deductW,150)&&!('hyd' in t.S.recipes[0].elabs[0].ings[0]),t.lc.deductW);
+
+// ── TESTS V2: VARIANTES, PLANIFICADOR, PERSISTENCIA Y EXCEL ──
+const white=()=>({id:'b',name:'Trigo blanco',flours:[{id:0,name:'Trigo',pct:100}],
+  ings:[{id:0,name:'Agua',pct:65},{id:1,name:'Sal',pct:2},{id:2,name:'Levadura',pct:1}],elabs:[]});
+const variant=(id,name,add)=>({id,name,baseId:'b',additions:add.map(([n,p],i)=>({id:'a'+i,name:n,pct:p})),pieces:1,weight:1000});
+const hv=variant('h','Hogaza',[['Agua',5]]);
+const cv=variant('c','Chapata',[['Agua',10]]);
+const sv=variant('s','Semillas',[['Semillas',20]]);
+const pv=variant('p','Pasas y nueces',[['Miel',5],['Pasas',15],['Nueces',15]]);
+const vwin=boot([white(),hv,cv,sv,pv]);
+const VS=vwin.__s;
+let c=VS.calculateVariant(sv,1880);
+ok('V2 semillas: 1680 g base + 200 g extra = 1880 g',near(c.baseMass,1680)&&near(c.added[0].grams,200)&&near(c.totalMass,1880));
+ok('V2 fórmula total de semillas',near(c.fullCalc.summaryRows.find(r=>r.name==='Semillas').grams,200));
+c=VS.calculateVariant(hv,1730);
+ok('V2 hogaza hidratación 70%',near(c.baseMass,1680)&&near(c.added[0].grams,50)&&near(c.fullCalc.summaryRows.find(r=>r.name==='Agua').grams,700));
+c=VS.calculateVariant(cv,1780);
+ok('V2 chapata hidratación 75%',near(c.baseMass,1680)&&near(c.added[0].grams,100));
+c=VS.calculateVariant(pv,2030);
+ok('V2 pan de nueces fórmula y peso',near(c.baseMass,1680)&&near(c.added[0].grams,50)&&near(c.added[1].grams,150)&&near(c.added[2].grams,150));
+VS.recipes[0].ings[0].pct=67;
+c=VS.calculateVariant(hv,1750);
+ok('V2 cambios en base heredados: 72% agua',near(c.fullCalc.summaryRows.find(r=>r.name==='Agua').grams/c.flourG*100,72));
+VS.recipes[0].ings[0].pct=65;
+const prod={extra:0,rows:{h:{enabled:true,pieces:2,weight:1000},c:{enabled:true,pieces:2,weight:700},s:{enabled:true,pieces:4,weight:1000}}};
+const plan=VS.calculateProduction('b',prod);
+ok('V2 plan peso final de tres variantes: 7400',near(plan.productMass,7400));
+ok('V2 plan masa base requerida 6838,01',near(plan.required,6838.012931505032));
+ok('V2 tres variantes y desglose individual',plan.items.length===3&&near(plan.items.find(x=>x.variant.id==='s').baseMass,3574.468085106383));
+const more=VS.calculateProduction('b',{...prod,extra:500});
+ok('V2 excedente sin alterar productos',near(more.totalBase,plan.required+500)&&near(more.productMass,plan.productMass));
+const list=VS.productionIngredients(plan);
+ok('V2 compra global sin duplicación de ingredientes',near(list.reduce((s,x)=>s+x.grams,0),plan.productMass));
+const sheets=VS.productionWorkbookData(plan);
+ok('V2 Excel 7 pestañas',sheets.length===7&&sheets.some(s=>s.name==='Elaboraciones')&&sheets.some(s=>s.name==='Ingredientes totales'));
+const files=VS.workbookParts(sheets);
+ok('V2 contenido OpenXML con fórmulas',files.some(([p,t])=>p==='xl/worksheets/sheet1.xml'&&t.includes('<f>B3*C3</f>')));
+VS.recipes[0].elabs=[{id:0,name:'Poolish',ings:[{id:0,type:'flour',flourId:0,pct:20},{id:1,type:'water',pct:100}]}];
+const prefer=VS.calculateProduction('b',prod);
+ok('V2 prefermento agregado único al escalar',prefer.baseCalc.elabCalcs.length===1&&near(prefer.baseCalc.elabCalcs[0].total,prefer.baseCalc.flourG*.4));
+ok('V2 prefermento no duplica masa',near(prefer.baseCalc.finalRows.reduce((s,x)=>s+x.final,0)+prefer.baseCalc.elabCalcs[0].total,prefer.totalBase));
+const sc=VS.calculateVariant(sv,1880);
+ok('V2 preelaboración heredada de variante',sc.fullCalc.elabCalcs.length===1&&near(sc.baseCalc.elabCalcs[0].total,400));
+VS.recipes[0].elabs=[];
+VS.recipes.find(x=>x.id==='c').additions=[{id:'w',name:'Agua',pct:-5}];
+let blocked=false;try{VS.calculateVariant(VS.recipes.find(x=>x.id==='c'),1000);}catch(e){blocked=true;}
+ok('V2 rechaza porcentaje negativo',blocked);
+VS.recipes.find(x=>x.id==='c').additions=[{id:'w',name:'Agua',pct:10}];
+const nb=JSON.parse(JSON.stringify(white()));
+const imported={format:'pan-agua-family-v1',recipes:[nb,sv],production:prod};
+const count=VS.importRecipeData(imported);
+ok('V2 importación familiar con remapeo y sin sobrescritura',count===2&&VS.recipes.length===7&&VS.recipes[5].id!=='b'&&VS.recipes[6].baseId===VS.recipes[5].id);
+let missing=false;const before=VS.recipes.length;
+try{VS.importRecipeData([{...variant('missing','Huérfana',[]),baseId:'ausente'}]);}catch(e){missing=true;}
+ok('V2 no importa variante huérfana',missing&&VS.recipes.length===before);
+const normal=boot([white(),hv]);normal.__s.aid='b';normal.__s.showDetail();normal.__x('showDeleteConfirm();deleteCurrent()');
+ok('V2 protege masa base con variantes',normal.__s.recipes.length===2&&/variante/i.test(normal.__alert||''));
+const loaded=boot([white(),sv]);loaded.__s.aid='s';loaded.__s.showDetail();
+loaded.__x('setResTab(1)');
+ok('V2 detalle desde masa base muestra solo base y adiciones',/Masa base/.test(loaded.document.getElementById('d_res_body').textContent)&&/Semillas/.test(loaded.document.getElementById('d_res_body').textContent)&&!/Levadura/.test(loaded.document.getElementById('d_res_body').textContent));
+loaded.__x("changeVariantMode('scratch');setResTab(1)");
+ok('V2 modo desde cero muestra ingredientes individuales',/Levadura/.test(loaded.document.getElementById('d_res_body').textContent));
+const origBase=VS.recipes[0];
+const bad={...origBase,ings:[...origBase.ings],elabs:[{id:1,name:'Exceso',ings:[{id:1,type:'flour',flourId:0,pct:110}]}]};
+blocked=false;try{VS.baseFactor(bad);}catch(e){blocked=true;}
+ok('V2 bloquea exceso de harina en elaboraciones',blocked);
+
 console.log(fails?fails+' FALLOS':'TODO OK');

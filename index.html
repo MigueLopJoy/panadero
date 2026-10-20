@@ -60,6 +60,7 @@
       </button>
     </div>
 
+    <div id="det_family_actions"></div>
     <!-- production inputs -->
     <div class="card">
       <div class="card-hdr">Producción</div>
@@ -89,6 +90,7 @@
     </div>
 
     <div id="del_confirm_wrap">
+      <button class="btn btn-sm" onclick="exportCurrentFamily()">Exportar familia JSON</button>
       <button class="btn btn-danger btn-sm" id="del_btn_1" onclick="showDeleteConfirm()">Eliminar receta</button>
       <div id="del_confirm_box">
         <div class="del-confirm-text">¿Eliminar esta receta? Esta acción no se puede deshacer.</div>
@@ -98,6 +100,24 @@
         </div>
       </div>
     </div>
+  </div>
+  <!-- FAMILY PRODUCTION -->
+  <div id="v_plan" style="display:none">
+    <div class="det-hdr">
+      <button class="btn btn-ghost btn-icon btn-sm" onclick="showList()" aria-label="Volver al recetario">←</button>
+      <div class="det-hdr-title"><div>Plan de producción</div><div id="plan_name"></div></div>
+      <button class="btn btn-sm" onclick="selectRecipe(planBaseId)">Ver base</button>
+    </div>
+    <div class="card"><div class="card-hdr">Panes que vas a producir</div>
+      <div id="plan_rows"></div>
+      <div class="field" style="margin-top:1rem"><label class="lbl" for="plan_extra">Masa base adicional sin asignar (g)</label>
+        <input id="plan_extra" type="number" min="0" step="1" value="0" oninput="updatePlanExtra(this.value)">
+      </div>
+    </div>
+    <div class="alert alert-err" id="plan_error"></div>
+    <div id="plan_results"></div>
+    <button id="plan_go_amasado" class="btn btn-full" onclick="sendPlannedBaseToAmasado()" disabled>Calcular temperatura para la masa base conjunta</button>
+    <button id="plan_export_excel" class="btn btn-primary btn-full" onclick="exportProductionExcel()" disabled>Exportar producción a Excel (.xlsx)</button>
   </div>
 </div>
 
@@ -310,6 +330,32 @@
   </div>
 </div>
 
+<!-- EDITOR DE VARIANTES -->
+<div class="modal-overlay" id="variant_overlay">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-hdr"><div class="modal-title" id="variant_title">Nueva variante</div>
+      <button class="btn btn-ghost btn-icon btn-sm" aria-label="Cerrar" onclick="closeVariantEditor()">×</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="variant_base_id">
+      <div class="field"><label class="lbl" for="variant_name">Nombre de la variante</label>
+        <input id="variant_name" type="text" placeholder="Ej. Hogaza de semillas"></div>
+      <div class="field"><label class="lbl" for="variant_notes">Notas</label><textarea id="variant_notes" rows="2"></textarea></div>
+      <div class="card inherited-card"><div class="card-hdr">Fórmula heredada de <span id="variant_base_label"></span></div>
+        <div id="variant_inherited"></div><div class="field-hint">Edita estos ingredientes en la receta base.</div></div>
+      <div class="section-hdr"><span>Ingredientes adicionales <span class="section-hdr-hint">(% sobre harina total)</span></span>
+        <button class="btn btn-ghost btn-xs" onclick="addVariantIngredient()">+ Ingrediente</button></div>
+      <div class="col-hdr-2"><span class="chdr">Ingrediente</span><span class="chdr">%</span><span></span></div>
+      <div id="variant_ings"></div>
+      <div class="field-hint">Ej.: añadir 5 % de agua incrementa la hidratación de 65 % a 70 %.</div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeVariantEditor()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveVariant()">Guardar variante</button></div>
+  </div>
+</div>
+
 <script src="scripts.js"></script>
+<script src="production.js"></script>
+<script src="excel-export.js"></script>
 </body>
 </html>

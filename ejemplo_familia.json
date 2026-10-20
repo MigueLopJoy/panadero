@@ -1,0 +1,154 @@
+{
+  "format": "pan-agua-family-v1",
+  "recipes": [
+    {
+      "id": "demo-trigo",
+      "name": "Masa base de trigo blanco",
+      "notes": "Masa base común para una familia de panes. Ejemplo con poolish heredado (opcional).",
+      "pieces": 1,
+      "weight": 1680,
+      "flours": [
+        {
+          "id": 0,
+          "name": "Harina de trigo",
+          "pct": 100
+        }
+      ],
+      "ings": [
+        {
+          "id": 0,
+          "name": "Agua",
+          "pct": 65
+        },
+        {
+          "id": 1,
+          "name": "Sal",
+          "pct": 2
+        },
+        {
+          "id": 2,
+          "name": "Levadura",
+          "pct": 1
+        }
+      ],
+      "elabs": [
+        {
+          "id": 0,
+          "name": "Poolish",
+          "ings": [
+            {
+              "id": 0,
+              "type": "flour",
+              "flourId": 0,
+              "pct": 20
+            },
+            {
+              "id": 1,
+              "type": "water",
+              "pct": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo-hogaza",
+      "baseId": "demo-trigo",
+      "name": "Hogaza blanca",
+      "notes": "Variante derivada de la masa base de trigo blanco.",
+      "pieces": 1,
+      "weight": 1000,
+      "productionMode": "base",
+      "additions": [
+        {
+          "id": "a0",
+          "name": "Agua",
+          "pct": 5
+        }
+      ]
+    },
+    {
+      "id": "demo-chapata",
+      "baseId": "demo-trigo",
+      "name": "Chapata",
+      "notes": "Variante derivada de la masa base de trigo blanco.",
+      "pieces": 1,
+      "weight": 1000,
+      "productionMode": "base",
+      "additions": [
+        {
+          "id": "a0",
+          "name": "Agua",
+          "pct": 10
+        }
+      ]
+    },
+    {
+      "id": "demo-semillas",
+      "baseId": "demo-trigo",
+      "name": "Pan de semillas",
+      "notes": "Variante derivada de la masa base de trigo blanco.",
+      "pieces": 1,
+      "weight": 1000,
+      "productionMode": "base",
+      "additions": [
+        {
+          "id": "a0",
+          "name": "Semillas",
+          "pct": 20
+        }
+      ]
+    },
+    {
+      "id": "demo-pasas",
+      "baseId": "demo-trigo",
+      "name": "Pan de pasas y nueces",
+      "notes": "Variante derivada de la masa base de trigo blanco.",
+      "pieces": 1,
+      "weight": 1000,
+      "productionMode": "base",
+      "additions": [
+        {
+          "id": "a0",
+          "name": "Miel",
+          "pct": 5
+        },
+        {
+          "id": "a1",
+          "name": "Pasas",
+          "pct": 15
+        },
+        {
+          "id": "a2",
+          "name": "Nueces",
+          "pct": 15
+        }
+      ]
+    }
+  ],
+  "production": {
+    "extra": 0,
+    "rows": {
+      "demo-hogaza": {
+        "enabled": true,
+        "pieces": 2,
+        "weight": 1000
+      },
+      "demo-chapata": {
+        "enabled": true,
+        "pieces": 2,
+        "weight": 700
+      },
+      "demo-semillas": {
+        "enabled": true,
+        "pieces": 4,
+        "weight": 1000
+      },
+      "demo-pasas": {
+        "enabled": false,
+        "pieces": 1,
+        "weight": 1000
+      }
+    }
+  }
+}

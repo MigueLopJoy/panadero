@@ -258,3 +258,37 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 /* ── ELABORACIONES: ingrediente con hidratación propia ── */
 .eeb-ei-block{margin-bottom:.55rem;padding-bottom:.45rem;border-bottom:1px dashed var(--border2)}
 .eeb-ei-block:last-child{border-bottom:none;padding-bottom:0}
+
+
+/* ═════════════════════════ FAMILIAS Y PLANIFICACIÓN ═════════════════════════ */
+.recipe-child{margin-left:1.05rem;border-left:3px solid var(--accent-l);border-radius:var(--r);padding:.7rem .8rem}
+.recipe-child .ri-icon{width:30px;height:30px;font-size:1rem}
+.family-action-panel{display:flex;flex-wrap:wrap;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--border);padding:.7rem .85rem;border-radius:var(--r);margin-bottom:.65rem}
+.family-hint{flex:1 1 100%;font-size:.72rem;color:var(--text2)}
+.variant-mode{margin-bottom:.75rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:.75rem;display:flex;gap:.4rem;flex-wrap:wrap}
+.variant-mode .lbl{width:100%}
+.inherited-card{background:var(--surface2);box-shadow:none;margin:.65rem 0}
+.inherited-card .field-hint{margin-bottom:.3rem;line-height:1.6}
+.addition-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) 30px;gap:5px;align-items:center;margin-bottom:.4rem}
+.addition-row input{font-size:.83rem;padding:.48rem .52rem;min-width:0}
+#v_plan{padding-bottom:1.5rem}
+.plan-item{padding:.85rem 0;border-bottom:1px solid var(--border)}
+.plan-item:last-child{border-bottom:none}
+.plan-item-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:.65rem;gap:.5rem}
+.plan-check{display:flex;gap:.5rem;align-items:center;font-size:.85rem;min-width:0}
+.plan-check input{width:17px;height:17px;accent-color:var(--accent);flex-shrink:0}
+.plan-item .prod-grid{margin-bottom:0}
+.plan-item input:disabled{opacity:.48}
+.plan-kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:.75rem 0}
+.plan-kpis .stat-val{font-size:1.15rem;color:var(--accent)}
+.plan-result-item{padding:.8rem 0;border-bottom:1px solid var(--border)}
+.plan-result-item:last-child{border-bottom:0}
+.plan-result-item >strong{display:block;font-size:.8rem;margin-bottom:.3rem}
+.plan-result-item .irr{padding:.35rem 0}
+.plan-result-item .irr:last-child .name{font-weight:700}
+.plan-result-item .irr-right .grams{font-size:.98rem}
+#plan_go_amasado{margin:.75rem 0 .4rem}
+#plan_go_amasado:disabled{opacity:.45;cursor:not-allowed}
+#plan_export_excel{margin:.4rem 0 1.2rem}
+#plan_export_excel:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:370px){.plan-kpis .stat-val{font-size:1rem}.plan-result-item .irr-left .name{font-size:.77rem}}

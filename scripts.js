@@ -95,6 +95,7 @@ function switchTab(name){
 function renderList(){
   const el=document.getElementById('recipe_list_el');
   document.getElementById('rc_count').textContent=recipes.length+' receta'+(recipes.length===1?'':'s');
+  if(typeof renderFamilyList==='function') return renderFamilyList();
   if(!recipes.length){
     el.innerHTML=`<div class="empty-state">🍞<br><br>Aún no tienes recetas guardadas.<br>Pulsa <strong>Nueva</strong> para crear la primera.</div>`;
     return;
@@ -118,57 +119,38 @@ function getHydration(r){
 }
 
 function selectRecipe(id){ activeId=id; renderList(); showDetail(); }
-function showList(){ document.getElementById('v_list').style.display=''; document.getElementById('v_detail').style.display='none'; }
+function showList(){ document.getElementById('v_list').style.display=''; document.getElementById('v_detail').style.display='none'; const p=document.getElementById('v_plan');if(p)p.style.display='none'; renderList(); }
 function showDetail(){
   document.getElementById('v_list').style.display='none';
   document.getElementById('v_detail').style.display='block';
+  const plan=document.getElementById('v_plan');if(plan)plan.style.display='none';
   const r=recipes.find(x=>x.id===activeId);
   if(r){
     if(r.weight!=null) document.getElementById('d_weight').value=r.weight;
     if(r.pieces!=null) document.getElementById('d_pieces').value=r.pieces;
   }
+  if(typeof renderFamilyActions==='function') renderFamilyActions();
   calcDetail();
 }
 
 // ═══════════════════════════════════════
 // RECIPE CALC
 // ═══════════════════════════════════════
-function calcDetail(){
-  const r=recipes.find(x=>x.id===activeId); if(!r) return;
-  const pieces=parseInt(document.getElementById('d_pieces').value)||0;
-  const unitW=parseFloat(document.getElementById('d_weight').value)||0;
-  const errEl=document.getElementById('d_err');
-  const resWrap=document.getElementById('d_res_wrap');
-  errEl.classList.remove('show'); resWrap.style.display='none';
-
-  document.getElementById('det_name').textContent=r.name;
-  document.getElementById('det_meta').textContent=r.notes||'';
-
-  if(!pieces||!unitW){ errEl.textContent='Introduce el número de piezas y el peso unitario.'; errEl.classList.add('show'); return; }
-
+// Cálculo puro de la receta: compartido por el recetario, las variantes y el planificador.
+// No modifica el DOM, las recetas ni localStorage. Devuelve masas SIN redondear.
+function calculateRecipeFormula(r, totalMass){
+  if(!Number.isFinite(totalMass)||totalMass<0) throw Error('Masa total no válida.');
   const fsum=(r.flours||[]).reduce((s,f)=>s+(parseFloat(f.pct)||0),0);
-  if(Math.abs(fsum-100)>0.01){ errEl.textContent='Las harinas suman '+fsum.toFixed(1)+'% (deben sumar exactamente 100%).'; errEl.classList.add('show'); return; }
-
-  const elabErr=validateElabs(r.ings||[], r.elabs||[]);
-  if(elabErr){ errEl.textContent=elabErr; errEl.classList.add('show'); }
-
-  const totalMass=pieces*unitW;
+  if(Math.abs(fsum-100)>0.01) throw Error('Las harinas deben sumar exactamente 100%.');
+  const err=validateElabs(r.ings||[],r.elabs||[]);
+  if(err) throw Error(err);
+  for(const i of [...(r.flours||[]),...(r.ings||[])]){
+    if(!Number.isFinite(Number(i.pct))||Number(i.pct)<0) throw Error('Porcentaje no válido para el ingrediente «'+i.name+'».');
+  }
   const otherPct=(r.ings||[]).reduce((s,i)=>s+(parseFloat(i.pct)||0),0);
   const flourG=totalMass/(1+otherPct/100);
-
-  // Per-flour grams
   const fG={};
-  (r.flours||[]).forEach(f=>{ fG[f.id]=flourG*(parseFloat(f.pct)||0)/100; });
-
-  // Chips
-  const chips=document.getElementById('d_chips');
-  const hw=getHydration(r);
-  chips.innerHTML='';
-  if(hw) chips.innerHTML+=`<span class="tag tag-water">Hid. ${hw.toFixed(0)}%</span>`;
-  (r.flours||[]).forEach(f=>chips.innerHTML+=`<span class="tag tag-flour">${esc(f.name)} ${(parseFloat(f.pct)||0).toFixed(0)}%</span>`);
-  if((r.elabs||[]).length) chips.innerHTML+=`<span class="tag tag-elab">${(r.elabs||[]).length} elaboración${(r.elabs||[]).length>1?'es':''} previa${(r.elabs||[]).length>1?'s':''}</span>`;
-  chips.innerHTML+=`<span style="font-size:.68rem;color:var(--text3)">${totalMass.toFixed(0)} g total</span>`;
-
+  (r.flours||[]).forEach(f=>{fG[f.id]=flourG*(parseFloat(f.pct)||0)/100;});
   // ── ELABORACIONES: deduct map ──
   // deductMap[flourId] += grams going to elaboraciones
   // deductWater += total water going to elaboraciones
@@ -202,7 +184,7 @@ function calcDetail(){
           deductW+=grams;
           elabIngs.push({name:'Agua', grams, type:'water', pctDesc:wp.toFixed(1)+'% s/ '+bName});
         } else {
-          const elabFlourG=elabIngs.filter(x=>x.type==='flour').reduce((s,x)=>s+x.grams,0);
+          const elabFlourG=(elab.ings||[]).filter(x=>x.type==='flour').reduce((s,x)=>s+flourG*(parseFloat(x.pct)||0)/100,0);
           grams=elabFlourG*wp/100;
           deductW+=grams;
           elabIngs.push({name:'Agua', grams, type:'water', pctDesc:wp.toFixed(1)+'% s/harina elaboración'});
@@ -228,13 +210,13 @@ function calcDetail(){
   const summaryRows=[];
   (r.flours||[]).forEach(f=>{
     const total=fG[f.id]||0;
-    summaryRows.push({name:f.name, tag:'flour', pct:(parseFloat(f.pct)||0).toFixed(1)+'% base', grams:total});
+    summaryRows.push({name:f.name, tag:'flour', pct:(parseFloat(f.pct)||0).toFixed(1)+'% base', pctValue:parseFloat(f.pct)||0, grams:total});
   });
   (r.ings||[]).forEach(ing=>{
     const pct=parseFloat(ing.pct)||0;
     const total=flourG*pct/100;
     const isWater=/^agua$/i.test((ing.name||'').trim());
-    summaryRows.push({name:ing.name, tag:isWater?'water':null, pct:pct.toFixed(2)+'%', grams:total});
+    summaryRows.push({name:ing.name, tag:isWater?'water':null, pct:pct.toFixed(2)+'%', pctValue:pct, grams:total});
   });
 
   // finalRows: each ingredient with elaboration deductions shown
@@ -254,15 +236,58 @@ function calcDetail(){
     finalRows.push({name:ing.name, tag:isWater?'water':null, pct:pct.toFixed(2)+'%', total, ded:totalDed, final:total-totalDed});
   });
 
+  if(finalRows.some(row=>row.final< -0.000001)) throw Error('Las elaboraciones previas utilizan más ingredientes de los disponibles.');
+  const expected=finalRows.reduce((sum,row)=>sum+row.final,0)+elabCalcs.reduce((sum,e)=>sum+e.total,0);
+  if(Math.abs(expected-totalMass)>0.00001) throw Error('Los ingredientes y elaboraciones no cuadran con la masa total.');
+
   // Cache for tab switching
   const totalElabFlour=Object.values(deductF).reduce((s,v)=>s+v,0);
-  lastCalc={elabCalcs, finalRows, summaryRows, totalMass, flourG, deductW, totalElabFlour, r,
+  return {elabCalcs, finalRows, summaryRows, totalMass, flourG, deductW, totalElabFlour, r,
     amasadoData:buildAmasadoData(r, fG, deductF, deductW, deductO, flourG, elabCalcs)};
+
+
+}
+
+function calcDetail(){
+  const r=recipes.find(x=>x.id===activeId); if(!r) return;
+  const pieces=Number(document.getElementById('d_pieces').value);
+  const unitW=parseFloat(document.getElementById('d_weight').value)||0;
+  const errEl=document.getElementById('d_err');
+  const resWrap=document.getElementById('d_res_wrap');
+  errEl.classList.remove('show'); resWrap.style.display='none';
+
+  document.getElementById('det_name').textContent=r.name;
+  document.getElementById('det_meta').textContent=r.notes||'';
+
+  if(!pieces||!unitW){ errEl.textContent='Introduce el número de piezas y el peso unitario.'; errEl.classList.add('show'); return; }
+
+  if(r.baseId){
+    if(typeof calcVariantDetail==='function') return calcVariantDetail(r,pieces,unitW,errEl,resWrap);
+    errEl.textContent='Falta cargar el módulo de familias.'; errEl.classList.add('show'); return;
+  }
+  if(!Number.isInteger(pieces)||pieces<1||!Number.isFinite(unitW)||unitW<=0){
+    errEl.textContent='Introduce cantidades y pesos válidos.';errEl.classList.add('show');return;
+  }
+  const totalMass=pieces*unitW;
+  let computed;
+  try{computed=calculateRecipeFormula(r,totalMass);}catch(e){errEl.textContent=e.message;errEl.classList.add('show');return;}
+  const {flourG}=computed;
+  // Chips
+  const chips=document.getElementById('d_chips');
+  const hw=getHydration(r);
+  chips.innerHTML='';
+  if(hw) chips.innerHTML+=`<span class="tag tag-water">Hid. ${hw.toFixed(0)}%</span>`;
+  (r.flours||[]).forEach(f=>chips.innerHTML+=`<span class="tag tag-flour">${esc(f.name)} ${(parseFloat(f.pct)||0).toFixed(0)}%</span>`);
+  if((r.elabs||[]).length) chips.innerHTML+=`<span class="tag tag-elab">${(r.elabs||[]).length} elaboración${(r.elabs||[]).length>1?'es':''} previa${(r.elabs||[]).length>1?'s':''}</span>`;
+  chips.innerHTML+=`<span style="font-size:.68rem;color:var(--text3)">${totalMass.toFixed(0)} g total</span>`;
+
+  lastCalc=computed;
 
   // Persist production inputs per recipe
   if(r.weight!==unitW || r.pieces!==pieces){ r.weight=unitW; r.pieces=pieces; save(); }
   resWrap.style.display='block';
-  buildResTabs(elabCalcs);
+  const tempBtn=resWrap.querySelector('.btn-goto-amasado');if(tempBtn)tempBtn.style.display='';
+  buildResTabs(lastCalc.elabCalcs);
   renderResTab(resTab);
 }
 
@@ -284,6 +309,7 @@ function setResTab(i){
 
 function renderResTab(i){
   if(!lastCalc) return;
+  if(lastCalc.variant && typeof renderVariantResTab==='function') return renderVariantResTab(i);
   const {elabCalcs,finalRows,summaryRows,totalMass,flourG,deductW,totalElabFlour}=lastCalc;
   const body=document.getElementById('d_res_body');
 
@@ -430,6 +456,7 @@ function buildAmasadoData(r, fG, deductF, deductW, deductO, flourG, elabCalcs){
 function goToAmasado(){
   if(!lastCalc) return;
   const d=lastCalc.amasadoData;
+  if(!d||d.waterMass<=0){ alert('No hay agua nueva que incorporar en esta etapa.'); return; }
   aIngs=d.ings.map((i,j)=>({id:aIngId++,...i}));
   document.getElementById('a_wm').value=d.waterMass;
   aRenderIngs(); aCalc();
@@ -579,6 +606,7 @@ function openNewRecipe(){
 
 function editCurrent(){
   const r=recipes.find(x=>x.id===activeId); if(!r) return;
+  if(r.baseId && typeof openVariantEditor==='function') return openVariantEditor(r.id);
   editingId=r.id;
   rFlours=(r.flours||[]).map(f=>({...f}));
   rIngs=(r.ings||[]).map(i=>({...i}));
@@ -881,6 +909,7 @@ function saveRecipe(){
   const recId = editingId || uid();
   const existing=editingId?recipes.find(x=>x.id===editingId):null;
   const rec={
+    ...(existing||{}), // preservar metadatos nuevos y futuros (familia, etc.)
     id: recId,
     name,
     notes:document.getElementById('r_notes').value.trim(),
@@ -917,6 +946,9 @@ function hideDeleteConfirm(){
 function deleteCurrent(){
   const r=recipes.find(x=>x.id===activeId);
   if(!r) return;
+  const children=recipes.filter(x=>x.baseId===r.id);
+  if(children.length){ alert('No puedes eliminar esta masa base: tiene '+children.length+' variante(s). Elimina antes las variantes.');return; }
+  if(typeof removeFromProduction==='function') removeFromProduction(r.id);
   recipes=recipes.filter(x=>x.id!==activeId);
   activeId=null;
   save();
