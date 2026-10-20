@@ -292,3 +292,15 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 #plan_export_excel{margin:.4rem 0 1.2rem}
 #plan_export_excel:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:370px){.plan-kpis .stat-val{font-size:1rem}.plan-result-item .irr-left .name{font-size:.77rem}}
+/* ══════ V3 · Plan transversal y escaldados exclusivos ══════ */
+#page_produccion{padding-bottom:1.5rem}
+#global_plan_excel{margin:.6rem 0 1.5rem}
+#global_plan_excel:disabled{opacity:.45;cursor:not-allowed}
+#global_recipe_pick{min-width:0;flex:1}
+#global_plan_rows .plan-item strong{font-size:.86rem}
+.plan-mode-select{margin-bottom:.7rem;font-size:.82rem}
+.variant-elab-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) 30px;gap:5px;align-items:center;margin:.65rem 0}
+.variant-elab-row .field-hint{grid-column:1/-1;margin:0}
+.variant-elab-row input,.variant-elab-row select{font-size:.79rem;padding:.45rem .5rem;min-width:0}
+.variant-elab-buttons{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.5rem}
+#variant_elabs{margin-top:.4rem}

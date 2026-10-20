@@ -1,8 +1,12 @@
 {
   "name": "pan-agua-produccion",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "Pan & Agua: formulación panadera, variantes y producción conjunta",
-  "scripts": {"test":"node test.js"},
-  "devDependencies": {"jsdom":"^26.1.0"}
+  "description": "Pan & Agua: familias, elaboraciones previas de variantes, planificador multirreceta y Excel",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
 }

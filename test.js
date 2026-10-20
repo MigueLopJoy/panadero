@@ -4,7 +4,7 @@ function boot(stored){
   const dom=new JSDOM(html,{runScripts:'outside-only',url:'http://localhost/'});
   const w=dom.window; w.alert=m=>{w.__alert=m};
   if(stored) w.localStorage.setItem('pan_v4',JSON.stringify(stored));
-  w.eval(fs.readFileSync('scripts.js','utf8')+ '\n'+fs.readFileSync('production.js','utf8')+'\n'+fs.readFileSync('excel-export.js','utf8')+';window.__x=c=>eval(c);window.__s={get lc(){return lastCalc},set aid(v){activeId=v},load,calcDetail,showDetail,validateElabs,get recipes(){return recipes},calculateVariant,calculateProduction,calculateRecipeFormula,baseFactor,productionIngredients,productionWorkbookData,workbookParts,planFor,importRecipeData}');
+  w.eval(fs.readFileSync('scripts.js','utf8')+ '\n'+fs.readFileSync('production.js','utf8')+'\n'+fs.readFileSync('global-planner.js','utf8')+'\n'+fs.readFileSync('excel-export.js','utf8')+';window.__x=c=>eval(c);window.__s={get lc(){return lastCalc},set aid(v){activeId=v},load,calcDetail,showDetail,validateElabs,get recipes(){return recipes},calculateVariant,calculateProduction,calculateRecipeFormula,baseFactor,productionIngredients,productionWorkbookData,globalProductionWorkbookData,workbookParts,planFor,importRecipeData,calculateGlobalProduction,get activePlan(){return activeGlobalPlan()},addToGlobalPlan,variantElabRecipe,openVariantEditor,saveVariant}');
   return w;
 }
 let fails=0;const ok=(n,c,x)=>{console.log((c?'PASS ':'FAIL ')+n+(c?'':' -> '+x));if(!c)fails++};
@@ -146,4 +146,34 @@ const bad={...origBase,ings:[...origBase.ings],elabs:[{id:1,name:'Exceso',ings:[
 blocked=false;try{VS.baseFactor(bad);}catch(e){blocked=true;}
 ok('V2 bloquea exceso de harina en elaboraciones',blocked);
 
+// ── TESTS V3: ESCALDADO EXCLUSIVO Y PLAN TRANSVERSAL ──
+const ownSeed={...variant('own','Semillas escaldadas',[['Semillas',20],['Agua',20]]),
+  additions:[{id:'seed',name:'Semillas',pct:20},{id:'water',name:'Agua',pct:20}],
+  elabs:[{id:'esc',name:'Escaldado de semillas',ings:[
+    {id:'s1',type:'other',ingId:'addition:seed',pct:20},
+    {id:'w1',type:'water',baseId:'s1',pct:100}]}]};
+const integral={id:'integral',name:'Centeno integral',flours:[{id:0,name:'Centeno',pct:100}],
+  ings:[{id:0,name:'Agua',pct:80},{id:1,name:'Sal',pct:2}],elabs:[]};
+const VW=boot([white(),ownSeed,cv,integral]);const V3=VW.__s;
+const scald=V3.calculateVariant(ownSeed,2080);
+ok('V3 escaldado: conserva 1680 g base y 400 g elaboración',near(scald.baseMass,1680)&&near(scald.stage.elabCalcs[0].total,400));
+ok('V3 escaldado descontado totalmente de adiciones',scald.stage.finalRows.every(x=>near(x.final,0)));
+ok('V3 elabs heredadas y exclusivas sin duplicación',scald.fullCalc.elabCalcs.length===1&&near(scald.fullCalc.elabCalcs[0].total,400));
+const withoutWater={...ownSeed,additions:[{id:'seed',name:'Semillas',pct:20}]};
+let rejected=false;try{V3.calculateVariant(withoutWater,1880);}catch(e){rejected=/agua|agua/i.test(e.message);}
+ok('V3 no extrae agua de masa base para escaldar',rejected);
+const planV3={id:'plan-v3',name:'Mi producción',rows:{own:{pieces:4,weight:1000,mode:'base'},c:{pieces:2,weight:700,mode:'base'},integral:{pieces:2,weight:800,mode:'scratch'}},extras:{b:500}};
+const global=V3.calculateGlobalProduction(planV3);
+ok('V3 plan mezcla familia e independiente',global.items.length===3&&global.groups.length===2);
+ok('V3 conservación de masa global + excedente',near(global.productMass,7000)&&near(global.purchasedMass,7500));
+ok('V3 escaldado permanece ligado a una sola variante',global.items.find(i=>i.recipe.id==='own').stage.elabCalcs.length===1&&global.groups.find(g=>g.base.id==='b').baseCalc.elabCalcs.length===0);
+ok('V3 Excel siete hojas y escaldado de variante',V3.globalProductionWorkbookData(global).length===7&&
+  V3.globalProductionWorkbookData(global).find(s=>s.name==='Elaboraciones').rows.some(r=>r[1]==='Semillas escaldadas'&&r[2]==='Escaldado de semillas'));
+const scratchPlan=JSON.parse(JSON.stringify(planV3));scratchPlan.rows.c.mode='scratch';
+const scratchCalc=V3.calculateGlobalProduction(scratchPlan);
+ok('V3 desde cero queda fuera del amasado conjunto',scratchCalc.groups.find(g=>g.base.id==='b').required<global.groups.find(g=>g.base.id==='b').required&&near(scratchCalc.productMass,global.productMass));
+V3.openVariantEditor('own');VW.__x('saveVariant()');
+ok('V3 guarda elaboraciones de la variante',!!V3.recipes.find(r=>r.id==='own').elabs?.[0]?.ings?.[1]?.baseId);
+V3.addToGlobalPlan('integral');
+ok('V3 plan independiente persistido',!!V3.activePlan.rows.integral&&!!JSON.parse(VW.localStorage.getItem('pan_global_plans_v1')).plans[V3.activePlan.id].rows.integral);
 console.log(fails?fails+' FALLOS':'TODO OK');

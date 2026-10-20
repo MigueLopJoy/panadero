@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════
-const SUBS = {recetas:'Recetario', amasado:'T° del agua de amasado', mezcla:'Mezcla fría / caliente'};
+const SUBS = {recetas:'Recetario', amasado:'T° del agua de amasado', mezcla:'Mezcla fría / caliente', produccion:'Planificación global'};
 
 // ═══════════════════════════════════════
 // STATE
@@ -73,12 +73,13 @@ function exportCurrent(){
 // TABS
 // ═══════════════════════════════════════
 function switchTab(name){
-  ['recetas','amasado','mezcla'].forEach(t=>{
+  ['recetas','produccion','amasado','mezcla'].forEach(t=>{
     document.getElementById('page_'+t).classList.toggle('active',t===name);
     document.getElementById('nav_'+t).classList.toggle('active',t===name);
   });
   document.getElementById('topbar_sub').textContent=SUBS[name];
   if(name==='amasado') aCalc();
+  if(name==='produccion' && typeof renderGlobalPlanner==='function') renderGlobalPlanner();
   if(name==='mezcla' && pendingMezclaTemp!==null){
     const tc=parseFloat(document.getElementById('m_tc').value)||0;
     const th=parseFloat(document.getElementById('m_th').value)||100;
@@ -949,12 +950,13 @@ function deleteCurrent(){
   const children=recipes.filter(x=>x.baseId===r.id);
   if(children.length){ alert('No puedes eliminar esta masa base: tiene '+children.length+' variante(s). Elimina antes las variantes.');return; }
   if(typeof removeFromProduction==='function') removeFromProduction(r.id);
+  if(typeof globalRemoveRecipe==='function') globalRemoveRecipe(r.id);
   recipes=recipes.filter(x=>x.id!==activeId);
   activeId=null;
   save();
   renderList();
   hideDeleteConfirm();
-  ['recetas','amasado','mezcla'].forEach(t=>{
+  ['recetas','produccion','amasado','mezcla'].forEach(t=>{
     document.getElementById('page_'+t).classList.toggle('active',t==='recetas');
     document.getElementById('nav_'+t).classList.toggle('active',t==='recetas');
   });

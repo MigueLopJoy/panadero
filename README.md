@@ -1,79 +1,85 @@
-# Pan & Agua · Familias y planificador de producción
+# Pan & Agua · V3: elaboraciones propias y producción global
 
-Ampliación de la aplicación web original, sin frameworks, servidores ni servicios externos. Contiene el recetario original, las calculadoras de temperatura de amasado y mezcla de agua, además de familias de recetas y planes de producción conjuntos.
+Aplicación web estática de formulación panadera. Conserva el recetario original, las familias de panes, las calculadoras de amasado y de mezcla de aguas, e incorpora **elaboraciones previas exclusivas de las variantes** y **planes transversales que combinan panes de distintas familias o independientes**.
 
-## Abrir la aplicación
+## Instalación
 
-Mantén **todos los archivos** en la misma carpeta. Abre `index.html` con un navegador moderno. Para evitar las restricciones de almacenamiento de algunos navegadores cuando se abren archivos `file://`, es preferible servir la carpeta desde un servidor estático. Por ejemplo:
+No se requiere servidor de aplicación, conexión a Internet ni base de datos. Conserva juntos `index.html`, `styles.css`, `scripts.js`, `production.js`, `global-planner.js` y `excel-export.js`.
+
+Puedes abrir `index.html` directamente, aunque recomendamos un servidor estático para la persistencia del navegador:
 
 ```bash
 python -m http.server 8000
 ```
 
-Después visita `http://localhost:8000`. También puedes desplegar el contenido como página estática.
+Después visita `http://localhost:8000`.
 
-## Recorrido de uso
+## Elaboraciones previas de cada variante
 
-1. En **Recetas > Nueva**, crea una receta normal para utilizarla como masa base. Configura sus harinas, ingredientes y elaboraciones previas (si procede).
-2. Abre la masa base y pulsa **+ Nueva variante**. Introduce el nombre y los ingredientes adicionales (porcentajes *sobre el peso total de harina*, no sobre la masa base).
-3. Guarda la variante. En su ficha podrás cambiar entre **Desde masa base** y **Desde cero**. En el primer modo, **Masa final** únicamente requiere masa base terminada y adiciones, sin repetir los prefermentos ya incorporados.
-4. En la ficha de la masa base pulsa **Planificar producción**. Activa las variantes y escribe las piezas y los gramos de masa por pieza de cada una.
-5. La aplicación calcula automáticamente los gramos de masa base necesarios, los prefermentos globales, el reparto entre variantes y los ingredientes totales para preparar. Si deseas preparar más masa base, introduce **Masa base adicional sin asignar (g)**.
-6. Pulsa **Exportar producción a Excel (.xlsx)** para obtener un Excel de siete hojas. También puedes transferir la **masa base conjunta** a la calculadora de temperatura.
+1. Abre una masa base y crea una variante, o abre una variante y pulsa **Editar**.
+2. En **Ingredientes adicionales**, incorpora todos los ingredientes de la transformación, *incluida el agua que vaya a consumir cualquier escaldado*. Los porcentajes se refieren a la harina total de la fórmula.
+3. En **Elaboraciones previas propias**, pulsa **+ Elaboración**, escribe su nombre (por ejemplo, *Escaldado de semillas*), añade una fila de ingrediente y otra de agua.
+4. En la fila de ingrediente, selecciona uno de los adicionales y especifica qué porcentaje de ese ingrediente destinas a la elaboración, expresado sobre la harina de la receta. En la fila de agua, selecciona el ingrediente de esa elaboración sobre el cual se aplica el porcentaje de hidratación.
+5. Guarda la variante. Sus pestañas incluyen tanto las preelaboraciones heredadas (ya incorporadas a la masa base) como las propias, que se preparan aparte.
 
-Los pesos son pesos de masa antes del horneado; no se aplica ninguna merma de fermentación u horneado.
+**Ejemplo:** masa base con 100 % harina, 65 % agua, 2 % sal y 1 % levadura; variante con 20 % semillas + 20 % agua adicionales; escaldado de 20 % semillas con 100 % de agua sobre las semillas. Por cada 1.000 g de harina, se emplean 1.680 g de masa base y se prepara un escaldado de 400 g (200 g semillas y 200 g agua), para obtener 2.080 g de masa total. El agua del escaldado no se vuelve a mostrar como pendiente en la masa final.
 
-## Excel
+**Límite físico deliberado:** una preelaboración propia no puede sustraer ingredientes de la masa base **ya mezclada**. Si necesitas elaborar una preparación con harina o agua adicionales, añádelas primero como ingredientes específicos de la variante. El editor admite cantidades sobre cualquier ingrediente adicional, incluida harina añadida como ingrediente, y porcentajes de agua sobre ese ingrediente. Las elaboraciones tradicionales de harina de la masa base deben definirse en la receta base o producir la variante **desde cero**.
 
-La exportación genera un fichero `.xlsx` válido y completo **sin dependencias externas ni conexión a Internet**. Contiene:
+## Planificación de producción desde fuera del recetario
 
-- **Producción:** piezas, pesos, harina equivalente, masa base y adiciones por variante, con fórmulas en las celdas del cálculo de reparto.
-- **Masa base:** formulación, cantidades totales y descuentos por elaboraciones previas.
-- **Elaboraciones:** ingredientes y cantidades de cada prefermento, escaldado, remojo, etc.
-- **Masa final base:** ingredientes que se incorporan directamente después de preparar las elaboraciones previas.
-- **Reparto:** masa base y adiciones de cada variante por separado.
-- **Fórmulas:** composición completa de cada pan, con procedencia heredada o adicional.
-- **Ingredientes totales:** lista consolidada de ingredientes necesarios para la producción, incluido el posible excedente de masa base.
+1. En la navegación inferior, abre **Producción** (la planificación ya no pertenece a una receta concreta).
+2. Crea un plan nuevo o selecciona uno de los existentes y ponle un nombre.
+3. Añade cualquier pan del recetario: recetas independientes, masas base utilizadas como producto final y variantes de una o varias familias.
+4. Indica **número de piezas** y **peso por pieza**. En cada variante decide si utilizarás su masa base compartida o si la harás *desde cero*.
+5. La aplicación agrupa automáticamente las variantes que comparten una masa base en un solo amasado. Las recetas independientes conservan sus propias elaboraciones y no se mezclan accidentalmente con otras. Las variantes realizadas desde cero quedan fuera del amasado compartido.
+6. Para cada amasado puedes indicar un **excedente sin asignar (g)**. El plan muestra el reparto, las elaboraciones previas de las bases, las de cada variante y el total de ingredientes sin duplicaciones.
+7. Pulsa **Exportar plan completo a Excel (.xlsx)**.
 
-**Importante:** las hojas de desglose son una *fotografía* de la producción en el momento de exportar. Puedes editar piezas/pesos en la hoja «Producción» y se recalculan sus totales de reparto, pero las otras hojas no se regeneran automáticamente en Excel. Para cambios globales definitivos, actualiza el plan en la aplicación y vuelve a exportarlo.
+Se admiten varios planes con nombres distintos. Los datos de los planes se guardan aparte de las fórmulas y persisten al recargar.
 
-## Importación y exportación
+## Excel generado
 
-Las recetas existentes siguen guardándose en `localStorage` con la clave original **`pan_v4`**. Los planes se guardan aparte en **`pan_production_v1`**.
+El planificador produce siete hojas:
 
-- La exportación JSON ordinaria de una receta continúa existiendo.
-- **Exportar familia JSON** descarga la masa base, todas sus variantes y el plan guardado en un paquete autocontenido.
-- La función **Importar** acepta tanto recetas JSON individuales y arrays antiguos como las familias autocontenidas. En caso de conflicto de identificadores, remapea los registros importados, sin sobrescribir recetas existentes.
-- El ejemplo `ejemplo_familia.json` incluye la masa blanca con cuatro variantes, prefermento opcional y tres producciones seleccionadas; se puede importar desde la aplicación.
-- La eliminación de una masa base se bloquea mientras tenga variantes. Antes se deben eliminar las variantes.
+- **Producción:** lista de panes, piezas, pesos, modo de elaboración y masa base asignada, con fórmulas para los repartos de variantes.
+- **Masas base:** ingredientes necesarios para cada amasado compartido, con descuentos de elaboraciones previas y excedentes.
+- **Elaboraciones:** poolish, masas madre, escaldados y remojos, distinguiendo los amasados comunes de las elaboraciones exclusivas de cada variante.
+- **Masas finales:** qué componentes se incorporan en cada etapa, con los descuentos aplicados.
+- **Reparto:** ingredientes y preparaciones por pan.
+- **Fórmulas:** composición completa de cada receta producida.
+- **Ingredientes totales:** lista global de aprovisionamiento, sin sumar dos veces ingredientes ya incluidos en masas base o prefermentos.
 
-**Se recomienda guardar regularmente una copia JSON de las familias importantes.** El almacenamiento local del navegador puede borrarse si se eliminan los datos del sitio o se cambia de dispositivo.
+**Aviso:** las hojas de detalle son una fotografía del plan al exportar. Si modificas piezas o pesos dentro de la hoja «Producción», se recalcularán sus celdas con fórmulas, pero **las hojas de preparación y compras no se regeneran automáticamente en Excel**. Para actualizar la producción completa, modifica el plan en la aplicación y vuelve a exportarlo.
 
-## Alcance y decisiones técnicas
+## Compatibilidad y migración
 
-- Cada variante tiene **una sola receta base**, a un nivel. No se permiten jerarquías recursivas.
-- La variante **añade** ingredientes; no permite restar ingredientes de la masa base.
-- Las elaboraciones previas pertenecen a la receta base y se heredan. En esta versión no se configuran elaboraciones previas propias de cada variante.
-- En el cálculo de temperatura, la masa base se trata como un ingrediente compuesto; si una variante no tiene agua adicional, no se muestra la acción para calcular temperatura del agua de esa etapa.
-- Los ingredientes adicionales que tienen exactamente el mismo nombre (ignorando mayúsculas/minúsculas) que un ingrediente heredado se consolidan en el resumen completo.
-- La matemática utiliza todos los decimales, redondeando solamente al mostrar cantidades en pantalla. El Excel guarda los valores numéricos sin redondear.
+- Las recetas existentes permanecen en `localStorage` bajo **`pan_v4`**, sin necesidad de migrarlas manualmente.
+- Los planes familiares de V2 se conservan en `pan_production_v1`; al inicializar por primera vez la V3, sus filas seleccionadas se copian a un plan global si todavía no hay planes globales.
+- Los nuevos planes se almacenan en **`pan_global_plans_v1`**. Los datos de las recetas son independientes de los de producción.
+- La importación JSON sigue aceptando recetas individuales, listas y paquetes de familias de V2. La importación de una familia antigua con plan incorpora sus filas a un plan global adicional, sin sobrescribir otros planes.
+- La exportación JSON de familias y de recetas individuales se mantiene. Guarda copias fuera del navegador para proteger tus fórmulas: borrar los datos del sitio también borra su almacenamiento local.
+- En una masa base, **Abrir planificador** te lleva al plan global para elegir libremente los panes. En una variante, **Añadir esta variante al plan** la incorpora directamente al plan actual. También puedes acceder desde la navegación principal.
+- La eliminación de una masa base con variantes dependientes permanece bloqueada hasta resolver sus dependencias. Eliminar una receta retira sus filas de los planes sin alterar las demás.
 
-## Arquitectura
+## Estructura técnica
 
-- `index.html`: vistas, formularios y navegación.
-- `styles.css`: estilos de la interfaz móvil.
-- `scripts.js`: recetario, cálculo puro compartido, editor tradicional y herramientas de temperatura.
-- `production.js`: familias, cálculos de variantes, producción conjunta, planificación, persistencia e importación/exportación JSON.
-- `excel-export.js`: creación de Excel OpenXML (`.xlsx`) sin dependencias externas.
-- `test.js`: pruebas clásicas y nuevas de regresión.
+- `scripts.js`: editor original, motor de porcentajes panaderos y descuentos por elaboraciones, temperaturas.
+- `production.js`: familias, variantes, calculadora de elaboraciones exclusivas y compatibilidad con planes antiguos.
+- `global-planner.js`: planes globales, persistencia separada, agrupación de masas y pantalla de planificación.
+- `excel-export.js`: serialización OpenXML y Excel de planes globales y legados.
+- `index.html`, `styles.css`: interfaz móvil.
+- `test.js`: pruebas de regresión y verificaciones de V3 (requiere `jsdom`).
+- `ejemplo_recetas_v3.json`: conjunto de recetas importables con escaldado propio y pan independiente.
+- `ejemplo_produccion_global.xlsx`: muestra real de un plan multirreceta con elaboraciones previas.
 
-## Ejecutar las pruebas
+## Pruebas
 
-Con Node.js moderno, en esta carpeta:
+Si dispones de Node.js y puedes instalar las dependencias de desarrollo:
 
 ```bash
 npm install
 npm test
 ```
 
-`jsdom` se utiliza únicamente en pruebas, no en la aplicación desplegada. La batería cubre fórmulas, prefermentos, herencia, masas compartidas, persistencia, validaciones y estructura Excel. También se probó la interfaz y descarga en Chromium, y la muestra exportada se abrió mediante un lector de hojas de cálculo.
+El código de producción **no necesita `jsdom`**. Se ha validado adicionalmente en Chromium mediante pruebas funcionales del motor, la navegación y el editor de variantes. Se generó y verificó el XLSX de ejemplo, incluida su estructura y los resultados numéricos. Los pesos son de masa antes del horneado, sin estimar mermas.

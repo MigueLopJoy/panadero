@@ -9,6 +9,7 @@ let planBaseId=null;
 let variantEditingId=null;
 let variantAdditions=[];
 let variantMode='base';
+let variantElabs=[];
 
 function loadProduction(){
   try{const data=JSON.parse(localStorage.getItem(PRODUCTION_KEY)||'{}');productionPlans=data&&typeof data==='object'&&!Array.isArray(data)?data:{};}
@@ -41,10 +42,13 @@ function baseFactor(base){
 }
 function checkAdditions(v){
   if(!Array.isArray(v.additions)) throw Error('Los ingredientes adicionales de esta variante no son válidos.');
-  const ids=new Set();
+  const ids=new Set(),names=new Set();
   v.additions.forEach(a=>{
     if(!String(a.name||'').trim()) throw Error('Hay un ingrediente adicional sin nombre en «'+v.name+'».');
     numPct(a.pct,a.name);
+    const key=a.name.trim().toLocaleLowerCase('es');
+    if(names.has(key))throw Error('El ingrediente «'+a.name+'» aparece varias veces entre los adicionales. Usa una sola fila por ingrediente.');
+    names.add(key);
     if(ids.has(String(a.id))) throw Error('Hay identificadores de adición duplicados.');
     ids.add(String(a.id));
   });
@@ -52,17 +56,42 @@ function checkAdditions(v){
 // Devuelve un objeto virtual completo de la variante. Los IDs heredados
 // se preservan para que las elaboraciones de la receta base sigan apuntando
 // al ingrediente correcto. Los nuevos IDs usan un espacio de nombres propio.
+// Las preelaboraciones de una variante solo pueden consumir ingredientes
+// añadidos A ESA VARIANTE, nunca ingredientes incorporados a la masa base.
+function variantElabRecipe(v,flourG){
+  const ingredients=(v.additions||[]).map(a=>({id:'addition:'+a.id,name:a.name,pct:Number(a.pct)}));
+  const elabs=(v.elabs||[]).map(e=>({...e,ings:(e.ings||[]).map(row=>({...row}))}));
+  for(const e of elabs)for(const r of e.ings){
+    if(r.type==='flour')throw Error('Las elaboraciones exclusivas deben prepararse con ingredientes adicionales, no con harina ya mezclada en la masa base. Añade la harina como ingrediente adicional.');
+    if(r.type==='other'&&!ingredients.some(i=>i.id===r.ingId))throw Error('«'+e.name+'» usa un ingrediente que no pertenece a los adicionales de esta variante.');
+    if(r.type==='water'&&r.baseId==null)throw Error('El agua en «'+e.name+'» debe referirse a un ingrediente añadido de la misma elaboración.');
+  }
+  // La harina virtual solo fija la referencia de porcentajes panaderos.
+  // No representa harina nueva ni forma parte de la elaboración real.
+  const fake={name:v.name,flours:[{id:'reference-flour',name:'Referencia de harina',pct:100}],ings:ingredients,elabs};
+  const factor=1+ingredients.reduce((s,a)=>s+Number(a.pct)/100,0);
+  const c=calculateRecipeFormula(fake,flourG*factor);
+  return {elabCalcs:c.elabCalcs,finalRows:c.finalRows.filter(r=>r.tag!=='flour'),
+    waterRemaining:c.finalRows.filter(r=>r.tag==='water').reduce((s,r)=>s+r.final,0),
+    waterInElabs:c.deductW};
+}
 function effectiveVariantRecipe(v,base){
   checkAdditions(v);
   const ings=(base.ings||[]).map(x=>({...x}));
+  const additionsMap=new Map();
   for(const a of v.additions){
+    const key='addition:'+String(a.id);
     const same=ings.find(x=>x.name.trim().toLocaleLowerCase('es')===a.name.trim().toLocaleLowerCase('es'));
-    if(same) same.pct=Number(same.pct)+Number(a.pct);
-    else ings.push({id:'addition:'+String(a.id),name:a.name.trim(),pct:Number(a.pct)});
+    if(same){same.pct=Number(same.pct)+Number(a.pct);additionsMap.set(key,same.id);}
+    else{ings.push({id:key,name:a.name.trim(),pct:Number(a.pct)});additionsMap.set(key,key);}
   }
+  const inherited=(base.elabs||[]).map(e=>({...e,origin:'base',ings:(e.ings||[]).map(i=>({...i}))}));
+  const own=(v.elabs||[]).map(e=>({...e,origin:'variant',ings:(e.ings||[]).map(i=>{
+    const copy={...i};if(copy.type==='other')copy.ingId=additionsMap.get(String(copy.ingId))??copy.ingId;
+    return copy;
+  })}));
   return {id:v.id,name:v.name,notes:v.notes||'',flours:(base.flours||[]).map(x=>({...x})),ings,
-    elabs:(base.elabs||[]).map(e=>({...e,ings:(e.ings||[]).map(i=>({...i}))})),
-    hidInclElabs:base.hidInclElabs,hidPct:base.hidPct};
+    elabs:[...inherited,...own],hidInclElabs:base.hidInclElabs,hidPct:base.hidPct};
 }
 function calculateVariant(v,totalMass){
   if(!v.baseId) throw Error('No es una variante.');
@@ -75,11 +104,14 @@ function calculateVariant(v,totalMass){
   const baseMass=flourG*bf;
   const added=v.additions.map(a=>({id:a.id,name:a.name,pct:Number(a.pct),grams:flourG*Number(a.pct)/100}));
   const baseCalc=calculateRecipeFormula(base,baseMass);
+  const stage=variantElabRecipe(v,flourG);
   const effective=effectiveVariantRecipe(v,base);
   const fullCalc=calculateRecipeFormula(effective,totalMass);
   const sum=baseMass+added.reduce((s,a)=>s+a.grams,0);
-  if(Math.abs(sum-totalMass)>0.00001) throw Error('Error de conservación de masa en «'+v.name+'».');
-  return {variant:v,base,baseMass,added,flourG,totalMass,baseCalc,fullCalc,effective};
+  const stageTotal=stage.elabCalcs.reduce((s,e)=>s+e.total,0)+stage.finalRows.reduce((s,r)=>s+r.final,0);
+  if(Math.abs(sum-totalMass)>0.00001||Math.abs(stageTotal-(totalMass-baseMass))>0.00001)
+    throw Error('Error de conservación de masa en «'+v.name+'».');
+  return {variant:v,base,baseMass,added,flourG,totalMass,baseCalc,fullCalc,effective,stage};
 }
 function planFor(baseId){
   if(!productionPlans[baseId]||typeof productionPlans[baseId]!=='object')productionPlans[baseId]={extra:0,rows:{}};
@@ -157,7 +189,7 @@ function renderFamilyActions(){
   if(r.baseId){
     const b=recipes.find(x=>x.id===r.baseId);
     el.innerHTML=`<div class="family-action-panel"><div class="family-hint">${b?'Variante de '+esc(b.name):'⚠ Masa base no disponible'}</div>
-      ${b?`<button class="btn btn-sm" data-id="${esc(b.id)}" onclick="selectRecipe(this.dataset.id)">Ver masa base</button> <button class="btn btn-sm" data-id="${esc(b.id)}" onclick="openFamilyPlan(this.dataset.id)">Planificar familia</button>`:''}</div>
+      ${b?`<button class="btn btn-sm" data-id="${esc(b.id)}" onclick="selectRecipe(this.dataset.id)">Ver masa base</button> <button class="btn btn-sm" data-id="${esc(r.id)}" onclick="openGlobalPlanner(this.dataset.id)">Añadir esta variante al plan</button>`:''}</div>
       <div class="variant-mode"><span class="lbl">Modo de elaboración</span>
         <button class="btn btn-sm${(r.productionMode||'base')==='base'?' btn-primary':''}" onclick="changeVariantMode('base')">Desde masa base</button>
         <button class="btn btn-sm${r.productionMode==='scratch'?' btn-primary':''}" onclick="changeVariantMode('scratch')">Desde cero</button></div>`;
@@ -165,7 +197,7 @@ function renderFamilyActions(){
     const count=recipes.filter(x=>x.baseId===r.id).length;
     el.innerHTML=`<div class="family-action-panel"><div class="family-hint">${count?count+' variante(s) vinculadas':'Puedes utilizar esta receta como masa base'}</div>
       <button class="btn btn-sm" data-id="${esc(r.id)}" onclick="openVariantEditor(null,this.dataset.id)">+ Nueva variante</button>
-      <button class="btn btn-primary btn-sm" data-id="${esc(r.id)}" onclick="openFamilyPlan(this.dataset.id)">Planificar producción</button></div>`;
+      <button class="btn btn-primary btn-sm" data-id="${esc(r.id)}" onclick="openGlobalPlanner()">Abrir planificador</button></div>`;
   }
 }
 function changeVariantMode(mode){
@@ -184,24 +216,75 @@ function openVariantEditor(variantId=null,baseId=null){
   try{baseFactor(b);}catch(e){alert('Corrige la masa base antes de crear variantes: '+e.message);return;}
   variantEditingId=v?v.id:null;
   variantAdditions=v?(v.additions||[]).map(a=>({...a})):[];
+  variantElabs=v?(v.elabs||[]).map(e=>({...e,ings:(e.ings||[]).map(i=>({...i}))})):[];
   document.getElementById('variant_base_id').value=bid;
   document.getElementById('variant_name').value=v?v.name:'';
   document.getElementById('variant_notes').value=v?v.notes||'':'';
   document.getElementById('variant_title').textContent=v?'Editar variante':'Nueva variante';
   document.getElementById('variant_base_label').textContent=b.name;
   document.getElementById('variant_inherited').innerHTML=`<div class="field-hint">Harinas: ${(b.flours||[]).map(x=>esc(x.name)+' '+g1(x.pct)+'%').join(' · ')}</div><div class="field-hint">${(b.ings||[]).map(x=>esc(x.name)+' '+g1(x.pct)+'%').join(' · ')}</div><div class="field-hint">${(b.elabs||[]).length?'Elaboraciones heredadas: '+(b.elabs||[]).map(x=>esc(x.name)).join(', '):'Sin elaboraciones previas.'}</div>`;
-  renderVariantAdditions();document.getElementById('variant_overlay').classList.add('open');
+  renderVariantAdditions();renderVariantElabs();document.getElementById('variant_overlay').classList.add('open');
 }
 function closeVariantEditor(){document.getElementById('variant_overlay').classList.remove('open');variantEditingId=null;}
-function addVariantIngredient(){variantAdditions.push({id:uid(),name:'',pct:0});renderVariantAdditions();}
-function removeVariantIngredient(id){variantAdditions=variantAdditions.filter(a=>a.id!==id);renderVariantAdditions();}
-function setVariantIngredient(id,field,value){const a=variantAdditions.find(a=>a.id===id);if(a)a[field]=value;}
+function addVariantIngredient(){variantAdditions.push({id:uid(),name:'',pct:0});renderVariantAdditions();renderVariantElabs();}
+function removeVariantIngredient(id){variantAdditions=variantAdditions.filter(a=>a.id!==id);renderVariantAdditions();renderVariantElabs();}
+function setVariantIngredient(id,field,value){const a=variantAdditions.find(a=>a.id===id);if(a)a[field]=value;if(field==='name')renderVariantElabs();}
 function renderVariantAdditions(){
   const el=document.getElementById('variant_ings');
   el.innerHTML=variantAdditions.map(a=>`<div class="addition-row" data-addition-id="${esc(a.id)}">
     <input type="text" aria-label="Ingrediente adicional" placeholder="Agua, semillas, miel…" value="${esc(a.name)}" oninput="setVariantIngredient(this.parentElement.dataset.additionId,'name',this.value)">
     <input type="number" aria-label="Porcentaje adicional" min="0" step="0.01" value="${esc(a.pct)}" oninput="setVariantIngredient(this.parentElement.dataset.additionId,'pct',this.value)">
     <button class="btn btn-icon btn-ghost" aria-label="Eliminar ingrediente" onclick="removeVariantIngredient(this.parentElement.dataset.additionId)">×</button></div>`).join('') || '<div class="field-hint">Añade los ingredientes que incorporarás a la masa base.</div>';
+}
+// Editor de preelaboraciones propias: reutiliza el modelo de filas other/water
+// del editor clásico, restringiendo las fuentes a ingredientes adicionales.
+function addVariantElab(){variantElabs.push({id:uid(),name:'',ings:[]});renderVariantElabs();}
+function delVariantElab(id){variantElabs=variantElabs.filter(e=>e.id!==id);renderVariantElabs();}
+function setVariantElabName(id,name){const e=variantElabs.find(e=>e.id===id);if(e)e.name=name;}
+function addVariantElabRow(elabId,type){
+  const e=variantElabs.find(x=>x.id===elabId);if(!e)return;
+  if(type==='other'){
+    if(!variantAdditions.length){alert('Añade primero el ingrediente a la variante.');return;}
+    e.ings.push({id:uid(),type:'other',ingId:'addition:'+variantAdditions[0].id,pct:0});
+  }else{
+    const ref=e.ings.find(x=>x.type==='other');
+    if(!ref){alert('Añade antes un ingrediente al escaldado o remojo.');return;}
+    e.ings.push({id:uid(),type:'water',baseId:ref.id,pct:100});
+  }
+  renderVariantElabs();
+}
+function delVariantElabRow(elabId,rowId){
+  const e=variantElabs.find(x=>x.id===elabId);if(!e)return;
+  e.ings=e.ings.filter(x=>x.id!==rowId);renderVariantElabs();
+}
+function setVariantElabRow(elabId,rowId,field,value){
+  const e=variantElabs.find(x=>x.id===elabId),r=e?.ings.find(x=>x.id===rowId);
+  if(r)r[field]=value;
+}
+function renderVariantElabs(){
+  const el=document.getElementById('variant_elabs');if(!el)return;
+  el.innerHTML=variantElabs.map(e=>{
+    const sources=e.ings.filter(x=>x.type==='other');
+    const rows=e.ings.map(r=>{
+      let options='';
+      if(r.type==='other')options=variantAdditions.map(a=>`<option value="${esc('addition:'+a.id)}" ${r.ingId==='addition:'+a.id?'selected':''}>${esc(a.name||'Ingrediente sin nombre')}</option>`).join('');
+      else options=sources.map(a=>{
+        const match=variantAdditions.find(x=>'addition:'+x.id===a.ingId);
+        return `<option value="${esc(a.id)}" ${String(r.baseId)===String(a.id)?'selected':''}>${esc(match?.name||'Ingrediente eliminado')}</option>`;
+      }).join('');
+      return `<div class="variant-elab-row" data-elab-id="${esc(e.id)}" data-row-id="${esc(r.id)}">
+        <span class="field-hint">${r.type==='water'?'Agua (% s/ ingrediente)':'Ingrediente (% s/ harina)'}</span>
+        <select aria-label="Base de la fila" onchange="setVariantElabRow(this.closest('.variant-elab-row').dataset.elabId,this.closest('.variant-elab-row').dataset.rowId,'${r.type==='water'?'baseId':'ingId'}',this.value)">${options}</select>
+        <input aria-label="Porcentaje de elaboración" type="number" min="0" step="0.1" value="${esc(r.pct)}" oninput="setVariantElabRow(this.closest('.variant-elab-row').dataset.elabId,this.closest('.variant-elab-row').dataset.rowId,'pct',this.value)">
+        <button class="btn btn-ghost btn-icon" aria-label="Quitar fila" onclick="delVariantElabRow(this.closest('.variant-elab-row').dataset.elabId,this.closest('.variant-elab-row').dataset.rowId)">×</button></div>`;
+    }).join('');
+    return `<div class="eeb" data-elab-id="${esc(e.id)}"><div class="eeb-header">
+      <input class="eeb-name-input" type="text" aria-label="Nombre de elaboración" placeholder="Ej. Escaldado de semillas" value="${esc(e.name)}" oninput="setVariantElabName(this.closest('.eeb').dataset.elabId,this.value)">
+      <button class="btn btn-icon btn-danger" aria-label="Eliminar elaboración" onclick="delVariantElab(this.closest('.eeb').dataset.elabId)">×</button></div>
+      ${rows||'<div class="field-hint">Sin ingredientes asignados.</div>'}
+      <div class="variant-elab-buttons"><button class="btn btn-xs" onclick="addVariantElabRow(this.closest('.eeb').dataset.elabId,'other')">+ Ingrediente</button>
+      <button class="btn btn-xs" onclick="addVariantElabRow(this.closest('.eeb').dataset.elabId,'water')">+ Agua</button></div></div>`;
+  }).join('')||'<div class="field-hint">Esta variante no tiene elaboraciones exclusivas.</div>';
 }
 function saveVariant(){
   const name=document.getElementById('variant_name').value.trim();
@@ -212,7 +295,9 @@ function saveVariant(){
   const vOld=variantEditingId?recipes.find(x=>x.id===variantEditingId):null;
   const v={...(vOld||{}),id:variantEditingId||uid(),baseId,name,
     notes:document.getElementById('variant_notes').value.trim(),
-    additions:variantAdditions.map(a=>({id:a.id,name:a.name.trim(),pct:a.pct}))};
+    additions:variantAdditions.map(a=>({id:a.id,name:a.name.trim(),pct:a.pct})),
+    elabs:variantElabs.map(e=>({id:e.id,name:e.name.trim(),ings:e.ings.map(i=>({...i}))}))};
+  if(v.elabs.some(e=>!e.name||!e.ings.length)){alert('Todas las elaboraciones previas deben tener nombre e ingredientes.');return;}
   try{calculateVariant(v,1000);}catch(e){alert(e.message);return;}
   const idx=recipes.findIndex(x=>x.id===v.id);
   if(idx>=0)recipes[idx]=v;else recipes.push(v);
@@ -227,8 +312,8 @@ function calcVariantDetail(v,pieces,unitW,errEl,resWrap){
   const mode=v.productionMode||'base';
   const d=c.fullCalc;
   lastCalc={...d,variant:c,mode,r:mode==='scratch'?c.effective:v,
-    amasadoData:mode==='scratch'?d.amasadoData:{recipeName:v.name,waterMass:c.added.filter(a=>isWaterName(a.name)).reduce((s,a)=>s+a.grams,0),
-      ings:[{name:'Masa base: '+c.base.name,mass:c.baseMass,temp:20},...c.added.filter(a=>!isWaterName(a.name)).map(a=>({name:a.name,mass:a.grams,temp:20}))]}};
+    amasadoData:mode==='scratch'?d.amasadoData:{recipeName:v.name,waterMass:c.stage.waterRemaining,
+      ings:[{name:'Masa base: '+c.base.name,mass:c.baseMass,temp:20},...c.stage.finalRows.filter(a=>a.tag!=='water'&&a.final>0).map(a=>({name:a.name,mass:a.final,temp:20})),...c.stage.elabCalcs.filter(e=>e.total>0).map(e=>({name:'Elaboración: '+e.name,mass:e.total,temp:20}))]}};
   const hyd=getHydration(c.effective);
   document.getElementById('d_chips').innerHTML=`<span class="tag tag-elab">Variante de ${esc(c.base.name)}</span>${hyd!=null?`<span class="tag tag-water">Hid. ${g1(hyd)}%</span>`:''}<span class="tag">${g1(c.totalMass)} g</span>`;
   if(v.weight!==unitW||v.pieces!==pieces){v.weight=unitW;v.pieces=pieces;save();}
@@ -244,7 +329,8 @@ function renderVariantResTab(i){
     const body=document.getElementById('d_res_body');
     let html=`<div class="card"><div class="card-hdr">Incorporar a la masa final</div>`;
     html+=massRow('Masa base: '+c.base.name,c.baseMass,'Contiene todos sus ingredientes y elaboraciones previas');
-    c.added.forEach(a=>{html+=massRow(a.name,a.grams,'+'+g1(a.pct)+'% s/harina total');});
+    c.stage.elabCalcs.forEach(e=>{html+=massRow('Elaboración previa: '+e.name,e.total,'Preparada aparte para esta variante');});
+    c.stage.finalRows.filter(a=>a.final>0.000001).forEach(a=>{html+=massRow(a.name,a.final,'Pendiente de incorporar');});
     html+=`</div><div class="total-bar"><span class="total-bar-lbl">Masa final</span><span class="total-bar-val">${g1(c.totalMass)} g</span></div>`;
     body.innerHTML=html;
     return;
@@ -254,99 +340,16 @@ function renderVariantResTab(i){
   lastCalc={...state,variant:null,r:c.effective};
   try{renderResTab(i);}finally{lastCalc=state;}
   if(i>0&&i<=state.elabCalcs.length&&mode==='base'){
-    document.getElementById('d_res_body').insertAdjacentHTML('afterbegin','<div class="alert alert-ok show">Esta elaboración ya está incluida en la masa base. No la incorpores de nuevo a la variante.</div>');
+    const inherited=i<=c.baseCalc.elabCalcs.length;
+    document.getElementById('d_res_body').insertAdjacentHTML('afterbegin', inherited
+      ?'<div class="alert alert-ok show">Esta elaboración ya está incluida en la masa base. No la incorpores de nuevo a la variante.</div>'
+      :'<div class="alert alert-warn show">Esta elaboración es exclusiva de la variante. Prepárala aparte y añádela durante la transformación.</div>');
   }
 }
 
-// ── Planificador ──
-function openFamilyPlan(baseId){
-  const base=recipes.find(r=>r.id===baseId&&!r.baseId);
-  if(!base){alert('No existe la masa base seleccionada.');return;}
-  planBaseId=baseId;
-  document.getElementById('v_list').style.display='none';
-  document.getElementById('v_detail').style.display='none';
-  document.getElementById('v_plan').style.display='block';
-  renderPlanEditor();
-}
-function renderPlanEditor(){
-  if(!planBaseId)return;
-  const base=recipes.find(r=>r.id===planBaseId);
-  if(!base){showList();return;}
-  const plan=planFor(planBaseId);
-  document.getElementById('plan_name').textContent=base.name;
-  const options=recipes.filter(r=>r.baseId===planBaseId);
-  const rows=document.getElementById('plan_rows');
-  rows.innerHTML=options.length?options.map(v=>{
-    const row=planRow(planBaseId,v);
-    return `<div class="plan-item" data-variant-id="${esc(v.id)}"><div class="plan-item-head"><label class="plan-check"><input type="checkbox" ${row.enabled?'checked':''} onchange="updatePlanRow(this.closest('.plan-item').dataset.variantId,'enabled',this.checked)"><strong>${esc(v.name)}</strong></label><button class="btn btn-ghost btn-xs" onclick="selectRecipe(this.closest('.plan-item').dataset.variantId)">Ver</button></div>
-      <div class="prod-grid"><div class="field field-flush"><label class="lbl">Nº piezas</label><input type="number" min="1" step="1" value="${esc(row.pieces)}" ${row.enabled?'':'disabled'} oninput="updatePlanRow(this.closest('.plan-item').dataset.variantId,'pieces',this.value)"></div>
-      <div class="field field-flush"><label class="lbl">Peso pieza (g)</label><input type="number" min="0.1" step="0.1" value="${esc(row.weight)}" ${row.enabled?'':'disabled'} oninput="updatePlanRow(this.closest('.plan-item').dataset.variantId,'weight',this.value)"></div></div></div>`;
-  }).join(''):'<div class="empty-state">Crea primero una variante desde la receta base.<br><button class="btn btn-primary btn-sm" onclick="openVariantEditor(null,planBaseId)">+ Crear variante</button></div>';
-  document.getElementById('plan_extra').value=plan.extra||0;
-  renderPlanResults();
-}
-function updatePlanRow(id,field,value){
-  const v=recipes.find(x=>x.id===id&&x.baseId===planBaseId);if(!v)return;
-  const row=planRow(planBaseId,v);
-  row[field]=field==='enabled'?!!value:value; // guardar también el texto inválido para mostrar un error real
-  saveProduction();
-  if(field==='enabled')renderPlanEditor();else renderPlanResults();
-}
-function updatePlanExtra(value){planFor(planBaseId).extra=value;saveProduction();renderPlanResults();}
-function renderPlanResults(){
-  const e=document.getElementById('plan_error'),out=document.getElementById('plan_results'),btn=document.getElementById('plan_export_excel');
-  e.classList.remove('show');out.innerHTML='';btn.disabled=true;
-  const amasadoBtn=document.getElementById('plan_go_amasado');if(amasadoBtn)amasadoBtn.disabled=true;
-  let calc;
-  try{calc=calculateProduction(planBaseId,planFor(planBaseId));}
-  catch(err){e.textContent=err.message;e.classList.add('show');return;}
-  if(!calc.items.length){out.innerHTML='<div class="empty-state">Selecciona al menos una variante para calcular la producción.</div>';return;}
-  btn.disabled=false;
-  if(amasadoBtn)amasadoBtn.disabled=calc.baseCalc.amasadoData.waterMass<=0;
-  let h=`<div class="plan-kpis"><div class="stat"><div class="stat-lbl">Masa base a preparar</div><div class="stat-val">${g1(calc.totalBase)} g</div></div><div class="stat"><div class="stat-lbl">Panes terminados</div><div class="stat-val">${g1(calc.productMass)} g</div></div></div>`;
-  h+=`<div class="card"><div class="card-hdr">Reparto de masa base</div>`;
-  for(const item of calc.items){
-    h+=`<div class="plan-result-item"><strong>${esc(item.variant.name)} · ${item.pieces} × ${g1(item.weight)} g</strong>`;
-    h+=massRow('Masa base',item.baseMass);
-    item.added.forEach(a=>{h+=massRow(a.name,a.grams,'+'+g1(a.pct)+'%');});
-    h+=massRow('Masa final',item.totalMass);
-    h+='</div>';
-  }
-  h+=`<div class="total-bar"><span class="total-bar-lbl">Masa base asignada</span><span class="total-bar-val">${g1(calc.required)} g</span></div>`;
-  if(calc.extra)h+=massRow('Masa base extra, sin asignar',calc.extra);
-  h+='</div>';
-  h+=`<div class="card"><div class="card-hdr">Preparar la masa base conjunta</div>`;
-  const bc=calc.baseCalc;
-  h+=`<div class="field-hint">Fórmula completa · harina total ${g1(bc.flourG)} g</div>`;
-  bc.summaryRows.forEach(x=>{h+=massRow(x.name,x.grams,x.pct);});
-  h+=`<div class="total-bar"><span class="total-bar-lbl">Total masa base</span><span class="total-bar-val">${g1(calc.totalBase)} g</span></div></div>`;
-  if(bc.elabCalcs.length){
-    h+=`<div class="card"><div class="card-hdr">Elaboraciones previas conjuntas</div>`;
-    for(const e of bc.elabCalcs){h+=`<div class="plan-result-item"><strong>${esc(e.name)}</strong>`;e.ings.forEach(x=>{h+=massRow(x.name,x.grams,x.pctDesc);});h+=massRow('Total '+e.name,e.total)+'</div>';}
-    h+='</div>';
-  }
-  h+=`<div class="card"><div class="card-hdr">Masa final de la base (tras elaboraciones)</div>`;
-  bc.finalRows.forEach(x=>{if(x.final>0.00001)h+=massRow(x.name,x.final,x.ded>0?'Preelaboraciones: −'+g1(x.ded)+' g':'');});
-  bc.elabCalcs.forEach(x=>{h+=massRow(x.name,x.total,'Ya elaborado');});
-  h+='</div>';
-  h+=`<div class="card"><div class="card-hdr">Ingredientes totales para preparar</div>`;
-  productionIngredients(calc).forEach(x=>{h+=massRow(x.name,x.grams);});
-  h+='</div>';
-  out.innerHTML=h;
-}
-function sendPlannedBaseToAmasado(){
-  if(!planBaseId)return;
-  let calc;try{calc=calculateProduction(planBaseId,planFor(planBaseId));}
-  catch(e){alert(e.message);return;}
-  const data=calc.baseCalc.amasadoData;
-  if(!calc.items.length||data.waterMass<=0){alert('La masa base no requiere agua nueva en el amasado o aún no has seleccionado variantes.');return;}
-  aIngs=data.ings.map(i=>({id:aIngId++,...i}));
-  document.getElementById('a_wm').value=data.waterMass;
-  aRenderIngs();aCalc();
-  const b=document.getElementById('a_banner');
-  b.textContent='✓ Masa base conjunta: '+calc.base.name+' · '+g1(calc.totalBase)+' g';
-  b.classList.add('show');switchTab('amasado');
-}
+// Planificador visual V2 sustituido por el planificador transversal en
+// global-planner.js. Se conservan calculateProduction y planFor para
+// migración de datos y compatibilidad de las pruebas anteriores.
 function removeFromProduction(recipeId){
   if(productionPlans[recipeId])delete productionPlans[recipeId];
   Object.values(productionPlans).forEach(p=>{if(p.rows)delete p.rows[recipeId];});
@@ -409,6 +412,15 @@ function importRecipeData(data){
       clone.rows=Object.fromEntries(Object.entries(clone.rows||{}).map(([id,row])=>[ids.get(id)||id,row]).filter(([id])=>imported.some(v=>v.id===id&&v.baseId)));
       productionPlans[ids.get(String(oldBase))]=clone;
       saveProduction();
+      // Al importar una familia antigua, conservar su plan en el nuevo
+      // planificador global en lugar de dejarlo oculto en el modo V2.
+      if(typeof globalPlans!=='undefined'&&typeof currentGlobalPlanId!=='undefined'){
+        const pid=uid();
+        globalPlans[pid]={id:pid,name:'Familia importada: '+(imported.find(x=>x.id===ids.get(String(oldBase)))?.name||'pan'),
+          rows:Object.fromEntries(Object.entries(clone.rows||{}).filter(([,r])=>r.enabled).map(([id,r])=>[id,{pieces:r.pieces,weight:r.weight,mode:'base'}])),
+          extras:clone.extra>0?{[ids.get(String(oldBase))]:clone.extra}:{}};
+        saveGlobalPlans();
+      }
     }
   }
   save();renderList();return imported.length;

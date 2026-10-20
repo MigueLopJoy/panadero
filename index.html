@@ -101,24 +101,25 @@
       </div>
     </div>
   </div>
-  <!-- FAMILY PRODUCTION -->
-  <div id="v_plan" style="display:none">
-    <div class="det-hdr">
-      <button class="btn btn-ghost btn-icon btn-sm" onclick="showList()" aria-label="Volver al recetario">←</button>
-      <div class="det-hdr-title"><div>Plan de producción</div><div id="plan_name"></div></div>
-      <button class="btn btn-sm" onclick="selectRecipe(planBaseId)">Ver base</button>
-    </div>
-    <div class="card"><div class="card-hdr">Panes que vas a producir</div>
-      <div id="plan_rows"></div>
-      <div class="field" style="margin-top:1rem"><label class="lbl" for="plan_extra">Masa base adicional sin asignar (g)</label>
-        <input id="plan_extra" type="number" min="0" step="1" value="0" oninput="updatePlanExtra(this.value)">
-      </div>
-    </div>
-    <div class="alert alert-err" id="plan_error"></div>
-    <div id="plan_results"></div>
-    <button id="plan_go_amasado" class="btn btn-full" onclick="sendPlannedBaseToAmasado()" disabled>Calcular temperatura para la masa base conjunta</button>
-    <button id="plan_export_excel" class="btn btn-primary btn-full" onclick="exportProductionExcel()" disabled>Exportar producción a Excel (.xlsx)</button>
+</div>
+
+<!-- ═══════════════════════════════ PLANIFICACIÓN GLOBAL ═══════════════════════════════ -->
+<div class="page" id="page_produccion">
+  <div class="card">
+    <div class="card-hdr-row"><div class="card-hdr">Planificador independiente</div>
+      <button class="btn btn-sm" onclick="createGlobalPlan()">+ Nuevo plan</button></div>
+    <div class="field"><label class="lbl">Plan actual</label><select id="global_plans_select" onchange="chooseGlobalPlan(this.value)"></select></div>
+    <div class="field"><label class="lbl">Nombre del plan</label><input id="global_plan_name" type="text" oninput="renameGlobalPlan(this.value)"></div>
+    <button class="btn btn-danger btn-xs" onclick="deleteGlobalPlan()">Eliminar este plan</button>
   </div>
+  <div class="card"><div class="card-hdr">Añadir panes de cualquier familia</div>
+    <div class="field"><label class="lbl">Recetas disponibles</label>
+      <div class="irow"><select id="global_recipe_pick"></select><button class="btn btn-primary" onclick="addPickedRecipe()">Añadir</button></div></div>
+    <div id="global_plan_rows"></div>
+  </div>
+  <div class="alert alert-err" id="global_plan_error"></div>
+  <div id="global_plan_results"></div>
+  <button class="btn btn-primary btn-full" id="global_plan_excel" onclick="exportGlobalProductionExcel()" disabled>Exportar plan completo a Excel (.xlsx)</button>
 </div>
 
 <!-- ═══════════════════════════════ AMASADO ═══════════════════════════════ -->
@@ -248,6 +249,10 @@
     </div>
     Recetas
   </button>
+  <button class="nav-btn" id="nav_produccion" onclick="switchTab('produccion')">
+    <div class="nav-pill"><svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M5 4h10M5 9h10M5 14h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M2 4h1M2 9h1M2 14h1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+    Producción
+  </button>
   <button class="nav-btn" id="nav_amasado" onclick="switchTab('amasado')">
     <div class="nav-pill" id="np_amasado">
       <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4l2.5 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -348,6 +353,9 @@
       <div class="col-hdr-2"><span class="chdr">Ingrediente</span><span class="chdr">%</span><span></span></div>
       <div id="variant_ings"></div>
       <div class="field-hint">Ej.: añadir 5 % de agua incrementa la hidratación de 65 % a 70 %.</div>
+      <div class="section-hdr"><span>Elaboraciones previas propias</span><button class="btn btn-ghost btn-xs" onclick="addVariantElab()">+ Elaboración</button></div>
+      <div id="variant_elabs"></div>
+      <div class="elab-hint">Para un escaldado, añade primero las semillas y el agua como ingredientes adicionales de la variante. En la elaboración, selecciona las semillas y después el agua con el porcentaje de hidratación deseado sobre esas semillas. Los ingredientes de la masa base ya están mezclados y no pueden utilizarse de nuevo.</div>
     </div>
     <div class="modal-foot"><button class="btn" onclick="closeVariantEditor()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveVariant()">Guardar variante</button></div>
@@ -356,6 +364,7 @@
 
 <script src="scripts.js"></script>
 <script src="production.js"></script>
+<script src="global-planner.js"></script>
 <script src="excel-export.js"></script>
 </body>
 </html>

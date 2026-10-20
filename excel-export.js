@@ -135,3 +135,99 @@ function exportProductionExcel(){
     downloadFile(file,'Produccion_'+safeFileName(calc.base.name)+'.xlsx');
   }catch(e){alert('No se ha podido exportar el Excel: '+e.message);}
 }
+
+// ═════════════════════════════════════════════════════════════════════
+// Excel v3: producción TRANSVERSAL. Cada receta aparece una sola vez;
+// cada amasado compartido se prepara una sola vez y cada escaldado de
+// variante se documenta en la etapa posterior.
+function globalProductionWorkbookData(calc){
+  const pr=[['PLAN GLOBAL · '+(calc.plan.name||'Producción')],
+    ['Pan','Piezas','Peso pieza (g)','Masa final (g)','Modo','Harina equivalente (g)','Masa base necesaria (g)','Adiciones (g)','Factor base','Incremento (%)']];
+  calc.items.forEach((i,k)=>{
+    const row=k+3,variantBase=i.type==='variant'&&i.mode==='base';
+    const factor=variantBase?baseFactor(i.base):0;
+    const extra=variantBase?i.added.reduce((s,a)=>s+a.pct,0):0;
+    pr.push([i.recipe.name,i.pieces,i.weight,{formula:`B${row}*C${row}`,value:i.totalMass},
+      variantBase?'Desde masa base':i.type==='variant'?'Desde cero':'Receta independiente',
+      variantBase?{formula:`D${row}/(I${row}+J${row}/100)`,value:i.flourG}:'',
+      variantBase?{formula:`F${row}*I${row}`,value:i.baseMass}:'',
+      variantBase?{formula:`D${row}-G${row}`,value:i.added.reduce((s,a)=>s+a.grams,0)}:'',factor,extra]);
+  });
+  const end=pr.length;
+  pr.push(['TOTAL PANES','','',{formula:end>=3?`SUM(D3:D${end})`:'0',value:calc.productMass}]);
+  pr.push(['EXCEDENTES SIN ASIGNAR','','',calc.extraMass]);
+  pr.push(['MASA TOTAL A ELABORAR','','',calc.purchasedMass]);
+  pr.push(['Nota','La hoja Producción recalcula el reparto de las variantes. Los desgloses son una fotografía al exportar: para actualizarlos, vuelve a exportar desde la aplicación.']);
+
+  const bases=[['AMASADOS / MASAS BASE · TOTALES AGRUPADOS'],['Masa','Ingrediente','Tipo','% sobre harina','Gramos totales','Gramos en masa final','Gramos en preelaboraciones']];
+  const elabs=[['ELABORACIONES PREVIAS · SEPARADAS POR ETAPA'],['Etapa','Pan o masa','Elaboración','Ingrediente','Referencia','Cantidad (g)']];
+  const final=[['MASAS FINALES · DESCUENTO DE PREELABORACIONES'],['Etapa','Masa o pan','Ingrediente o preparación','Gramos','Observaciones']];
+  const share=[['REPARTO DE MASAS Y COMPONENTES POR PAN'],['Pan','Piezas','Peso pieza (g)','Etapa','Ingrediente o masa','% adicional','Cantidad (g)']];
+  const full=[['COMPOSICIÓN COMPLETA DE LAS RECETAS'],['Pan','Ingrediente','Tipo','% sobre harina','Gramos']];
+  const shopping=[['INGREDIENTES TOTALES · SIN DUPLICAR ELABORACIONES'],['Ingrediente','Cantidad (g)','Cantidad (kg)']];
+  for(const group of calc.groups){
+    const c=group.baseCalc;
+    c.summaryRows.forEach((x,j)=>{
+      const d=c.finalRows[j];
+      bases.push([group.base.name,x.name,x.tag||'otro',x.pctValue,x.grams,d.final,d.ded]);
+    });
+    bases.push([group.base.name,'TOTAL MASA BASE','','',group.totalBase,c.finalRows.reduce((s,x)=>s+x.final,0),c.elabCalcs.reduce((s,x)=>s+x.total,0)]);
+    bases.push([group.base.name,'ASIGNADA A PANES','','',group.required]);
+    if(group.extra)bases.push([group.base.name,'EXCEDENTE SIN ASIGNAR','','',group.extra]);
+    for(const e of c.elabCalcs){
+      e.ings.forEach(x=>elabs.push(['Amasado común',group.base.name,e.name,x.name,x.pctDesc,x.grams]));
+      elabs.push(['Amasado común',group.base.name,'TOTAL '+e.name,'','',e.total]);
+    }
+    c.finalRows.filter(x=>x.final>0.000001).forEach(x=>final.push(['Amasado común',group.base.name,x.name,x.final,x.ded?'Ya separado en preelaboraciones: '+x.ded+' g':'']));
+    c.elabCalcs.forEach(x=>final.push(['Amasado común',group.base.name,x.name,x.total,'Preelaboración incorporada']));
+  }
+  for(const i of calc.items){
+    i.calc.summaryRows.forEach(x=>full.push([i.recipe.name,x.name,x.tag||'otro',x.pctValue,x.grams]));
+    if(i.type==='variant'&&i.mode==='base'){
+      share.push([i.recipe.name,i.pieces,i.weight,'Masa final','Masa base: '+i.base.name,'',i.baseMass]);
+      for(const e of i.stage.elabCalcs){
+        e.ings.forEach(x=>elabs.push(['Exclusiva de variante',i.recipe.name,e.name,x.name,x.pctDesc,x.grams]));
+        elabs.push(['Exclusiva de variante',i.recipe.name,'TOTAL '+e.name,'','',e.total]);
+        share.push([i.recipe.name,i.pieces,i.weight,'Preelaboración exclusiva',e.name,'',e.total]);
+        final.push(['Variante',i.recipe.name,'Preelaboración: '+e.name,e.total,'Preparar aparte de la masa base']);
+      }
+      i.stage.finalRows.filter(x=>x.final>0.000001).forEach(x=>{
+        share.push([i.recipe.name,i.pieces,i.weight,'Masa final',x.name,'',x.final]);
+        final.push(['Variante',i.recipe.name,x.name,x.final,'Añadir después de escaldados y remojos']);
+      });
+    }else{
+      for(const e of i.calc.elabCalcs){
+        // Receta independiente; si comparte la misma masa de un grupo,
+        // la preelaboración ya está documentada en "Amasado común".
+        if(i.type==='variant'&&i.mode==='scratch'){
+          e.ings.forEach(x=>elabs.push(['Desde cero',i.recipe.name,e.name,x.name,x.pctDesc,x.grams]));
+          elabs.push(['Desde cero',i.recipe.name,'TOTAL '+e.name,'','',e.total]);
+        }
+      }
+      if(i.type==='variant'&&i.mode==='scratch'){
+        i.calc.finalRows.filter(x=>x.final>0.000001).forEach(x=>{
+          share.push([i.recipe.name,i.pieces,i.weight,'Desde cero',x.name,'',x.final]);
+          final.push(['Desde cero',i.recipe.name,x.name,x.final,'Preparación independiente']);
+        });
+        i.calc.elabCalcs.forEach(e=>share.push([i.recipe.name,i.pieces,i.weight,'Desde cero',e.name,'',e.total]));
+      }else{
+        share.push([i.recipe.name,i.pieces,i.weight,'Masa compartida',i.recipe.name,'',i.totalMass]);
+      }
+    }
+    share.push([i.recipe.name,i.pieces,i.weight,'TOTAL','MASA FINAL','',i.totalMass]);
+  }
+  if(!elabs[2])elabs.push(['Sin elaboraciones previas']);
+  calc.ingredientRows.forEach(i=>shopping.push([i.name,i.grams,i.grams/1000]));
+  shopping.push(['MASA TOTAL DE INGREDIENTES',calc.purchasedMass,calc.purchasedMass/1000]);
+  return [{name:'Producción',rows:pr},{name:'Masas base',rows:bases},{name:'Elaboraciones',rows:elabs},
+    {name:'Masas finales',rows:final},{name:'Reparto',rows:share},
+    {name:'Fórmulas',rows:full},{name:'Ingredientes totales',rows:shopping}];
+}
+function exportGlobalProductionExcel(){
+  try{
+    const calc=calculateGlobalProduction(activeGlobalPlan());
+    if(!calc.items.length)throw Error('Añade panes al plan antes de exportarlo.');
+    const blob=xlsxBlob(globalProductionWorkbookData(calc));
+    downloadFile(blob,'Produccion_'+safeFileName(calc.plan.name||'Global')+'.xlsx');
+  }catch(e){alert('No se pudo exportar el Excel: '+e.message);}
+}
