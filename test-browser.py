@@ -280,6 +280,71 @@ with sync_playwright() as p:
   const c=calculateVariant(v,2030);return {root:getFamilyRoot(v).name,depth:recipeDepth(v),weight:c.totalMass};}''')
  ok(imported['root']=='Masa original' and imported['depth']==3 and abs(imported['weight']-2030)<1e-5,
    'V6 familia importada conserva vínculos y cálculos entre generaciones')
+ # V7 · Selector múltiple de recetas en el planificador.
+ js("""()=>{const p=activeGlobalPlan();p.rows={};p.extras={};pendingGlobalRecipeIds.clear();saveGlobalPlans();renderGlobalPlanner();switchTab('produccion');}""")
+ page.locator('#global_recipe_pick').click()
+ ok(page.locator('#global_recipe_options').is_visible() and
+    page.locator('#global_recipe_options input[type=checkbox]').count()==len(js('recipes.map(r=>r.id)')),
+    'V7 abrir desplegable muestra una casilla por receta disponible')
+ ok(page.locator('#global_recipe_add').is_disabled(),'V7 botón Añadir inicialmente deshabilitado')
+ page.locator('#global_recipe_options input[value="trigo"]').check()
+ page.locator('#global_recipe_options input[value="ch"]').check()
+ page.locator('#global_recipe_options input[value="fo"]').check()
+ ok(js('Object.keys(activeGlobalPlan().rows).length')==0 and
+    page.locator('#global_recipe_pick_label').inner_text()=='3 panes seleccionados',
+    'V7 marcar tres panes no modifica el plan y actualiza el contador')
+ page.locator('#global_recipe_options input[value="fo"]').uncheck()
+ ok(js('pendingGlobalRecipeIds.size')==2 and page.locator('#global_recipe_add').is_enabled(),
+    'V7 desmarcar uno solo elimina esa selección temporal')
+ page.keyboard.press('Escape')
+ ok(not page.locator('#global_recipe_options').is_visible() and
+    page.locator('#global_recipe_pick').get_attribute('aria-expanded')=='false',
+    'V7 Escape cierra el desplegable sin perder las selecciones')
+ page.locator('#global_recipe_pick').click()
+ ok(page.locator('#global_recipe_options input[value="ch"]').is_checked() and
+    page.locator('#global_recipe_options input[value="trigo"]').is_checked(),
+    'V7 al reabrir siguen marcadas las recetas pendientes')
+ page.locator('#global_recipe_add').click()
+ ok(set(js('Object.keys(activeGlobalPlan().rows)'))=={'trigo','ch'} and
+    page.locator('#global_plan_rows .plan-item').count()==2,
+    'V7 Añadir confirma ambas recetas con una sola operación')
+ ok(page.locator('#global_recipe_add').is_disabled() and
+    page.locator('#global_recipe_options input[value="trigo"]').count()==0,
+    'V7 tras confirmar se limpia la selección y no se ofrecen duplicados')
+ calc=js("""()=>{const c=calculateGlobalProduction(activeGlobalPlan());return {product:c.productMass,ingredients:c.purchasedMass,items:c.items.length}}""")
+ ok(calc['items']==2 and abs(calc['product']-calc['ingredients'])<1e-5,
+    'V7 selección múltiple conserva cálculos y balance de masa')
+ page.locator('#global_recipe_pick').click()
+ page.locator('#global_recipe_options input[value="fo"]').check()
+ page.locator('#global_recipe_picker').press('Escape')
+ js('createGlobalPlan()')
+ ok(js('pendingGlobalRecipeIds.size')==0 and js('Object.keys(activeGlobalPlan().rows).length')==0 and
+    page.locator('#global_recipe_add').is_disabled(),
+    'V7 al crear otro plan se descartan selecciones no confirmadas')
+ # Se puede marcar toda la familia en una sola apertura.
+ page.locator('#global_recipe_pick').click()
+ ids=js('recipes.map(r=>String(r.id))')
+ for id in ids:
+  page.locator('#global_recipe_options input').evaluate_all("""(els, id)=>{const el=els.find(x=>x.value===id);if(el&&!el.checked){el.checked=true;el.dispatchEvent(new Event('change',{bubbles:true}));}}""",id)
+ ok(js('pendingGlobalRecipeIds.size')==len(ids),
+    'V7 permite seleccionar todos los panes de una vez')
+ page.locator('#global_recipe_add').click()
+ ok(js('Object.keys(activeGlobalPlan().rows).length')==len(ids) and
+    page.locator('#global_recipe_pick').is_disabled(),
+    'V7 todos los panes añadidos desactivan el desplegable vacío')
+ js('removeGlobalPlanRow("fo")')
+ ok(not page.locator('#global_recipe_pick').is_disabled() and
+    page.locator('#global_recipe_pick_label').inner_text()=='Elige un pan para añadir...',
+    'V7 un pan retirado vuelve a estar disponible para selección')
+ # Preparar una captura de interfaz con el menú abierto y varios panes marcados.
+ js("""()=>{const p=activeGlobalPlan();p.rows={trigo:{pieces:2,weight:800,mode:'scratch'}};
+   pendingGlobalRecipeIds.clear();saveGlobalPlans();renderGlobalPlanner();switchTab('produccion');}""")
+ page.locator('#global_recipe_pick').click()
+ page.locator('#global_recipe_options input[value="ch"]').check()
+ page.locator('#global_recipe_options input[value="fo"]').check()
+ page.screenshot(path=str(ROOT/'vista_selector_multiple_v7.png'),full_page=False)
+ ok(page.locator('#global_recipe_add').is_enabled() and not errors,
+    'V7 captura de selector desplegado sin errores JavaScript')
  ok(not errors,'sin errores JavaScript de navegador: '+str(errors))
  print(f'\n{checks} COMPROBACIONES CORRECTAS')
  browser.close()

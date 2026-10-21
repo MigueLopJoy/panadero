@@ -1,4 +1,4 @@
-# Pan & Agua v6 · Variantes de variantes y amasados encadenados
+# Pan & Agua v7 · Selección múltiple de panes en producción
 
 Esta versión amplía el recetario y el planificador global de V5 sin cambiar las claves de almacenamiento (`pan_v4` para recetas y `pan_global_plans_v1` para planes) ni requerir un servidor de aplicaciones.
 
@@ -53,3 +53,10 @@ python -m http.server 8000
 ```
 
 Después abre `http://localhost:8000`. Para ejecutar las pruebas funcionales, instala Playwright para Python y Chromium, y ejecuta `python test-browser.py` (en una máquina donde se encuentre Chromium en `/usr/bin/chromium`).
+
+
+## V7: selección múltiple en un paso
+
+En la pestaña **Producción**, el control **Elige un pan para añadir...** ahora abre una lista de casillas de verificación. Marca tantos panes como desees y pulsa **Añadir** una sola vez. El botón permanece desactivado si no hay ninguno seleccionado. Los panes que ya forman parte del plan no vuelven a aparecer en la lista. Si desmarcas uno antes de confirmar, no se añade; cambiar de plan descarta la selección temporal no confirmada. Cerrar el desplegable sin añadir no cambia el plan.
+
+La selección no afecta al cálculo ni al almacenamiento hasta que pulses **Añadir**. Se mantienen los modos por receta, las masas compartidas, las preelaboraciones y la exportación Excel de V6.

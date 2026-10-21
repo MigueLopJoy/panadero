@@ -1,8 +1,8 @@
 {
   "name": "pan-agua-produccion",
-  "version": "6.0.0",
+  "version": "7.0.0",
   "private": true,
-  "description": "Pan & Agua: variantes multinivel y producción por etapas con Excel",
+  "description": "Pan & Agua: selector múltiple en el planificador de producción",
   "scripts": {
     "test": "node test.js"
   },

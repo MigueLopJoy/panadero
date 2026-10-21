@@ -113,8 +113,18 @@
     <button class="btn btn-danger btn-xs" onclick="deleteGlobalPlan()">Eliminar este plan</button>
   </div>
   <div class="card"><div class="card-hdr">Añadir panes de cualquier familia</div>
-    <div class="field"><label class="lbl">Recetas disponibles</label>
-      <div class="irow"><select id="global_recipe_pick"></select><button class="btn btn-primary" onclick="addPickedRecipe()">Añadir</button></div></div>
+    <div class="field"><label class="lbl" id="global_recipe_picker_label">Recetas disponibles</label>
+      <div class="irow recipe-picker-row">
+        <div class="recipe-multi" id="global_recipe_picker" onkeydown="handleGlobalRecipePickerKeydown(event)">
+          <button type="button" id="global_recipe_pick" class="recipe-multi-trigger" aria-labelledby="global_recipe_picker_label global_recipe_pick_label" aria-expanded="false" aria-controls="global_recipe_options" onclick="toggleGlobalRecipePicker()">
+            <span id="global_recipe_pick_label">Elige un pan para añadir...</span>
+            <span class="recipe-multi-chevron" aria-hidden="true"></span>
+          </button>
+          <div id="global_recipe_options" class="recipe-multi-options" role="group" aria-label="Selecciona los panes que quieras añadir" hidden></div>
+        </div>
+        <button type="button" id="global_recipe_add" class="btn btn-primary" onclick="addPickedRecipes()" disabled>Añadir</button>
+      </div>
+    </div>
     <div id="global_plan_rows"></div>
   </div>
   <div class="alert alert-err" id="global_plan_error"></div>

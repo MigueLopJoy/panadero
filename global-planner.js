@@ -115,16 +115,88 @@ function openGlobalPlanner(recipeId=null){
 }
 // Atajos desde las fichas antiguas: entran al mismo plan global.
 function openFamilyPlan(baseId){openGlobalPlanner();}
+// Selección temporal: las casillas NO modifican el plan hasta pulsar «Añadir».
+let pendingGlobalRecipeIds=new Set();
+function defaultGlobalPlanRow(r){
+  return {pieces:r.pieces||1,weight:r.weight||500,mode:r.baseId?(r.productionMode==='scratch'?'scratch':'base'):'scratch'};
+}
 function addToGlobalPlan(id){
   const r=recipes.find(x=>String(x.id)===String(id));if(!r)return;
   const p=activeGlobalPlan();
-  if(!p.rows[r.id])p.rows[r.id]={pieces:r.pieces||1,weight:r.weight||500,mode:r.baseId?(r.productionMode==='scratch'?'scratch':'base'):'scratch'};
+  if(!p.rows[r.id])p.rows[r.id]=defaultGlobalPlanRow(r);
+  pendingGlobalRecipeIds.delete(String(r.id));
   saveGlobalPlans();renderGlobalPlanner();
 }
-function addPickedRecipe(){
-  const value=document.getElementById('global_recipe_pick').value;
-  if(value)addToGlobalPlan(value);
+function availableGlobalRecipes(){
+  const p=activeGlobalPlan();
+  const added=new Set(Object.keys(p?.rows||{}));
+  return recipes.filter(r=>!added.has(String(r.id)));
 }
+function renderGlobalRecipePicker(){
+  const available=availableGlobalRecipes();
+  const validIds=new Set(available.map(r=>String(r.id)));
+  pendingGlobalRecipeIds=new Set([...pendingGlobalRecipeIds].filter(id=>validIds.has(id)));
+  const options=document.getElementById('global_recipe_options');
+  const trigger=document.getElementById('global_recipe_pick');
+  options.innerHTML=available.length?available.map(r=>{
+    const id=String(r.id);
+    return `<label class="recipe-multi-option"><input type="checkbox" value="${esc(id)}" ${pendingGlobalRecipeIds.has(id)?'checked':''} onchange="toggleGlobalRecipeSelection(this.value,this.checked)"><span>${esc(globalPlanItemLabel(r))}</span></label>`;
+  }).join(''):'<div class="recipe-multi-empty">Todos los panes están añadidos a este plan.</div>';
+  trigger.disabled=!available.length;
+  toggleGlobalRecipePicker(false);
+  updateGlobalRecipePickerLabel();
+}
+function updateGlobalRecipePickerLabel(){
+  const count=pendingGlobalRecipeIds.size;
+  const available=availableGlobalRecipes().length;
+  document.getElementById('global_recipe_pick_label').textContent=
+    !available?'Todos los panes están añadidos':count?`${count} pan${count===1?'':'es'} seleccionado${count===1?'':'s'}`:'Elige un pan para añadir...';
+  const add=document.getElementById('global_recipe_add');
+  add.disabled=count===0;
+  add.setAttribute('aria-label',count?`Añadir ${count} pan${count===1?'':'es'} a la producción`:'Selecciona panes para añadir');
+}
+function toggleGlobalRecipePicker(force){
+  const options=document.getElementById('global_recipe_options');
+  const trigger=document.getElementById('global_recipe_pick');
+  if(!options||!trigger)return;
+  const open=!trigger.disabled&&(typeof force==='boolean'?force:options.hidden);
+  options.hidden=!open;
+  trigger.setAttribute('aria-expanded',String(open));
+}
+function toggleGlobalRecipeSelection(id,checked){
+  const key=String(id);
+  if(!availableGlobalRecipes().some(r=>String(r.id)===key))return;
+  if(checked)pendingGlobalRecipeIds.add(key);
+  else pendingGlobalRecipeIds.delete(key);
+  updateGlobalRecipePickerLabel();
+}
+function handleGlobalRecipePickerKeydown(event){
+  if(event.key==='Escape'&&!document.getElementById('global_recipe_options').hidden){
+    toggleGlobalRecipePicker(false);
+    document.getElementById('global_recipe_pick').focus();
+    event.preventDefault();
+  }
+}
+// Cerrar al pulsar fuera sin perder las selecciones pendientes.
+document.addEventListener('pointerdown',event=>{
+  const picker=document.getElementById('global_recipe_picker');
+  if(picker&&!picker.contains(event.target))toggleGlobalRecipePicker(false);
+});
+function addPickedRecipes(){
+  const p=activeGlobalPlan();
+  let added=0;
+  for(const id of pendingGlobalRecipeIds){
+    const r=recipes.find(x=>String(x.id)===id);
+    if(!r||p.rows[r.id])continue;
+    p.rows[r.id]=defaultGlobalPlanRow(r);
+    added++;
+  }
+  pendingGlobalRecipeIds.clear();
+  if(added){saveGlobalPlans();renderGlobalPlanner();}
+  else renderGlobalRecipePicker();
+}
+// Compatibilidad con el nombre de función usado por versiones anteriores.
+function addPickedRecipe(){addPickedRecipes();}
 function setGlobalPlanRow(id,field,value){
   const p=activeGlobalPlan(),row=p.rows[id];if(!row)return;
   row[field]=value;saveGlobalPlans();
@@ -138,14 +210,14 @@ function setGlobalExtra(id,value){
 }
 function createGlobalPlan(){
   const id=uid();globalPlans[id]={id,name:'Nueva producción',rows:{},extras:{}};
-  currentGlobalPlanId=id;saveGlobalPlans();renderGlobalPlanner();
+  currentGlobalPlanId=id;pendingGlobalRecipeIds.clear();saveGlobalPlans();renderGlobalPlanner();
 }
-function chooseGlobalPlan(id){if(!globalPlans[id])return;currentGlobalPlanId=id;saveGlobalPlans();renderGlobalPlanner();}
+function chooseGlobalPlan(id){if(!globalPlans[id])return;currentGlobalPlanId=id;pendingGlobalRecipeIds.clear();saveGlobalPlans();renderGlobalPlanner();}
 function renameGlobalPlan(name){activeGlobalPlan().name=name;saveGlobalPlans();}
 function deleteGlobalPlan(){
   if(Object.keys(globalPlans).length===1){alert('Debe existir al menos un plan. Puedes vaciar sus recetas.');return;}
   if(!confirm('¿Eliminar este plan de producción? Las recetas permanecerán intactas.'))return;
-  delete globalPlans[currentGlobalPlanId];currentGlobalPlanId=Object.keys(globalPlans)[0];saveGlobalPlans();renderGlobalPlanner();
+  delete globalPlans[currentGlobalPlanId];currentGlobalPlanId=Object.keys(globalPlans)[0];pendingGlobalRecipeIds.clear();saveGlobalPlans();renderGlobalPlanner();
 }
 function globalRemoveRecipe(id){
   for(const p of Object.values(globalPlans)){
@@ -159,9 +231,7 @@ function renderGlobalPlanner(){
   document.getElementById('global_plans_select').innerHTML=Object.values(globalPlans).map(x=>
     `<option value="${esc(x.id)}" ${x.id===currentGlobalPlanId?'selected':''}>${esc(x.name||'Sin nombre')}</option>`).join('');
   document.getElementById('global_plan_name').value=p.name||'';
-  const selected=new Set(Object.keys(p.rows||{}));
-  document.getElementById('global_recipe_pick').innerHTML='<option value="">Elige un pan para añadir...</option>'+recipes.filter(r=>!selected.has(String(r.id))).map(r=>
-    `<option value="${esc(r.id)}">${esc(globalPlanItemLabel(r))}</option>`).join('');
+  renderGlobalRecipePicker();
   const rows=document.getElementById('global_plan_rows');
   rows.innerHTML=Object.entries(p.rows||{}).map(([id,row])=>{
     const r=recipes.find(x=>String(x.id)===id);

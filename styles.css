@@ -312,3 +312,22 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 .variant-water-row .variant-water-basis{grid-column:1/-1;background:var(--surface)}
 .variant-solid-row select{min-width:0}
 #variant_water_info{margin:.5rem 0;line-height:1.5}
+
+
+/* V7 · Selector múltiple de panes del planificador */
+.recipe-picker-row{align-items:stretch}
+.recipe-multi{position:relative;flex:1;min-width:0}
+.recipe-multi-trigger{width:100%;min-height:41px;display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:var(--r);padding:.58rem .8rem;font-family:'Inter',sans-serif;font-size:.82rem;cursor:pointer}
+.recipe-multi-trigger:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.recipe-multi-trigger[aria-expanded="true"]{border-color:var(--accent);background:var(--surface)}
+.recipe-multi-trigger:disabled{cursor:not-allowed;color:var(--text3);opacity:.75}
+#global_recipe_pick_label{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
+.recipe-multi-chevron{border-right:1.5px solid var(--text2);border-bottom:1.5px solid var(--text2);width:7px;height:7px;transform:rotate(45deg);margin:0 3px 3px 0;flex:none;transition:transform .15s}
+.recipe-multi-trigger[aria-expanded="true"] .recipe-multi-chevron{transform:rotate(225deg);margin-bottom:0;margin-top:3px}
+.recipe-multi-options{position:absolute;z-index:80;top:calc(100% + 4px);left:0;right:0;max-height:min(45vh,330px);overflow-y:auto;overscroll-behavior:contain;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);box-shadow:0 8px 28px rgba(26,23,20,.17);padding:5px}
+.recipe-multi-options[hidden]{display:none}
+.recipe-multi-option{display:flex;align-items:flex-start;gap:9px;padding:10px 8px;border-radius:8px;cursor:pointer;color:var(--text);font-size:.79rem;line-height:1.45;overflow-wrap:anywhere}
+.recipe-multi-option:hover,.recipe-multi-option:focus-within{background:var(--surface2)}
+.recipe-multi-option input[type="checkbox"]{flex:0 0 17px;width:17px;height:17px;margin-top:1px;accent-color:var(--accent);cursor:pointer}
+.recipe-multi-empty{padding:.75rem;font-size:.76rem;color:var(--text3)}
+#global_recipe_add:disabled{opacity:.45;cursor:not-allowed}
