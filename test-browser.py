@@ -124,6 +124,62 @@ with sync_playwright() as p:
  const c=calculateGlobalProduction(plan),s=globalProductionWorkbookData(c);
  return {mass:c.productMass,elab:s.find(x=>x.name==='Elaboraciones').rows.some(row=>row.includes('Escaldado')),count:s.length};}''')
  ok(output['mass']==2080 and output['elab'] and output['count']==7,'plan y Excel incluyen el escaldado y siete hojas')
+ # V5: la masa madre heredada solo figura en la variante elaborada desde cero.
+ mother=dict(WHITE)
+ mother['elabs']=[{"id":8,"name":"Masa madre","ings":[
+   {"id":80,"type":"flour","flourId":0,"pct":20},
+   {"id":81,"type":"water","pct":100}]}]
+ own=dict(VAR)
+ own['productionMode']='base'
+ js('closeVariantEditor()')
+ js('(data)=>{recipes=data;activeId="semillas";resTab=0;save();renderList();showDetail();}',[mother,own])
+ ok(page.locator('#d_res_nav .res-tab').all_text_contents()==['Resumen','Escaldado','Masa final'],
+    'V5 desde masa base solo pestaña de elaboración exclusiva')
+ page.locator('#d_res_nav .res-tab').nth(1).click()
+ ok('Masa madre' not in page.locator('#d_res_body').inner_text(),
+    'V5 no aparece la masa madre heredada en pestaña exclusiva')
+ page.locator('#d_res_nav .res-tab').nth(2).click()
+ ok('Masa madre' not in page.locator('#d_res_body').inner_text() and
+    'Masa base:' in page.locator('#d_res_body').inner_text(),
+    'V5 masa final desde base muestra masa preparada, no masa madre')
+ js("openVariantEditor('semillas')")
+ ok('Masa madre' not in page.locator('#variant_inherited').inner_text(),
+    'V5 editor desde base oculta las elaboraciones heredadas')
+ js("closeVariantEditor();changeVariantMode('scratch')")
+ ok(page.locator('#d_res_nav .res-tab').all_text_contents()==['Resumen','Masa madre','Escaldado','Masa final'],
+    'V5 desde cero recupera las elaboraciones heredadas y propias')
+ page.locator('#d_res_nav .res-tab').nth(1).click()
+ ok('Trigo' in page.locator('#d_res_body').inner_text(),
+    'V5 detalle de masa madre se muestra desde cero')
+ js("openVariantEditor('semillas')")
+ ok('Masa madre' in page.locator('#variant_inherited').inner_text(),
+    'V5 editor desde cero muestra herencia')
+ js("closeVariantEditor();changeVariantMode('base')")
+ ok(page.locator('#d_res_nav .res-tab').all_text_contents()==['Resumen','Escaldado','Masa final'] and
+    page.locator('#d_res_nav .res-tab.active').inner_text()=='Resumen',
+    'V5 cambiar a base elimina pestaña anterior y restablece resumen')
+ # Verificar planificador y Excel sin modificar los cálculos.
+ plans=js("""()=>{const mk=mode=>calculateGlobalProduction({id:'v5',name:'Prueba',
+    rows:{semillas:{pieces:2,weight:1040,mode}},extras:{}});
+   const b=mk('base'),s=mk('scratch');
+   const be=globalProductionWorkbookData(b).find(x=>x.name==='Elaboraciones').rows;
+   const se=globalProductionWorkbookData(s).find(x=>x.name==='Elaboraciones').rows;
+   return {bm:b.productMass,sm:s.productMass,bp:b.purchasedMass,sp:s.purchasedMass,be,se};} """)
+ ok(abs(plans['bm']-plans['sm'])<1e-5 and abs(plans['bp']-plans['sp'])<1e-5,
+    'V5 conservación de cantidades al cambiar modo')
+ ok(any(r[0]=='Amasado común' and r[2]=='Masa madre' for r in plans['be']) and
+    not any(r[0]=='Exclusiva de variante' and r[2]=='Masa madre' for r in plans['be']),
+    'V5 Excel desde base presenta masa madre solo en amasado común')
+ ok(any(r[0]=='Desde cero' and r[2]=='Masa madre' for r in plans['se']),
+    'V5 Excel desde cero presenta masa madre dentro de la variante')
+ # Sin elaboraciones propias: solo deben quedar Resumen y Masa final en modo base.
+ js("""()=>{const v=recipes.find(x=>x.id==='semillas');v.elabs=[];v.productionMode='base';
+      activeId='semillas';resTab=0;renderFamilyActions();calcDetail();}""")
+ ok(page.locator('#d_res_nav .res-tab').all_text_contents()==['Resumen','Masa final'],
+    'V5 sin elaboraciones propias no quedan pestañas heredadas en modo base')
+ js("changeVariantMode('scratch')")
+ ok(page.locator('#d_res_nav .res-tab').all_text_contents()==['Resumen','Masa madre','Masa final'],
+    'V5 sin elaboraciones propias recupera Masa madre desde cero')
  ok(not errors,'sin errores JavaScript de navegador: '+str(errors))
  print(f'\n{checks} COMPROBACIONES CORRECTAS')
  browser.close()

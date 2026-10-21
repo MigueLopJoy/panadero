@@ -1,8 +1,8 @@
 {
   "name": "pan-agua-produccion",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "private": true,
-  "description": "Pan & Agua: familias, elaboraciones previas de variantes, planificador multirreceta y Excel",
+  "description": "Pan & Agua: familias y planes globales con visibilidad de preelaboraciones según modo de producción",
   "scripts": {
     "test": "node test.js"
   },

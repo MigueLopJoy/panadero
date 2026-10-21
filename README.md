@@ -1,4 +1,4 @@
-# Pan & Agua · V4: corrección de hidratación de elaboraciones y producción global
+# Pan & Agua · V5: elaboraciones heredadas según el modo de elaboración
 
 Aplicación web estática de formulación panadera. Conserva el recetario original, las familias de panes, las calculadoras de amasado y de mezcla de aguas, e incorpora **elaboraciones previas exclusivas de las variantes** y **planes transversales que combinan panes de distintas familias o independientes**.
 
@@ -20,7 +20,7 @@ Después visita `http://localhost:8000`.
 2. En **Ingredientes adicionales**, incorpora todos los ingredientes de la transformación, *incluida el agua que vaya a consumir cualquier escaldado*. Los porcentajes se refieren a la harina total de la fórmula.
 3. En **Elaboraciones previas propias**, pulsa **+ Elaboración**, escribe su nombre (por ejemplo, *Escaldado de semillas*), añade una fila de ingrediente y otra de agua.
 4. En la fila de ingrediente, selecciona uno de los adicionales y especifica qué porcentaje de ese ingrediente destinas a la elaboración, expresado sobre la harina de la receta. El botón **+ Agua** crea una fila de agua independiente (no un selector de ingredientes). Indica el porcentaje de hidratación y selecciona como referencia **todos los ingredientes de la elaboración** o **un ingrediente concreto**. La primera opción suma la harina y/u otros ingredientes de esa elaboración.
-5. La cantidad de agua utilizada en una o varias elaboraciones **no puede superar el porcentaje de Agua declarado en los ingredientes adicionales** de la variante. El editor indica el consumo y el cálculo se bloquea si falta agua. Guarda la variante. Sus pestañas incluyen tanto las preelaboraciones heredadas (ya incorporadas a la masa base) como las propias, que se preparan aparte.
+5. La cantidad de agua utilizada en una o varias elaboraciones **no puede superar el porcentaje de Agua declarado en los ingredientes adicionales** de la variante. El editor indica el consumo y el cálculo se bloquea si falta agua. Guarda la variante. Si seleccionas **Desde masa base**, sus pestañas muestran únicamente las elaboraciones **propias** que debes preparar aparte. En **Desde cero** también aparecen las elaboraciones heredadas (como masa madre o poolish).
 
 **Ejemplo:** masa base con 100 % harina, 65 % agua, 2 % sal y 1 % levadura; variante con 20 % semillas + 20 % agua adicionales; escaldado de 20 % semillas con 100 % de agua sobre las semillas. Por cada 1.000 g de harina, se emplean 1.680 g de masa base y se prepara un escaldado de 400 g (200 g semillas y 200 g agua), para obtener 2.080 g de masa total. El agua del escaldado no se vuelve a mostrar como pendiente en la masa final.
 
@@ -97,3 +97,13 @@ El código de producción **no necesita `jsdom`**. Se ha validado adicionalmente
 ## Corrección V4: diferencia entre agua disponible y base de hidratación
 
 En una variante, el agua de una elaboración previa es un **consumo** de la fila «Agua» de sus ingredientes adicionales. El **porcentaje que escribes en la elaboración** expresa una proporción respecto a los sólidos elegidos: puedes elegir un ingrediente o «Todos los ingredientes de la elaboración» (harinas y demás ingredientes añadidos a esa elaboración). Por ejemplo, 20 % semillas + 10 % harina, con 100 % de agua sobre todos: requiere 30 % de agua adicional en la receta. Si solo declaras 25 % de agua adicional, se muestra un error y no permite guardar. Las elaboraciones previas de la masa base siguen perteneciendo a la propia masa base. Los planes y el Excel usan exactamente el mismo cálculo.
+
+## Cambio de visualización en V5
+
+Al abrir una **variante** y seleccionar **Desde masa base**, la aplicación **no muestra** como elaboraciones pendientes las heredadas de la masa base: ya están incorporadas en la masa preparada. Solo aparecen las elaboraciones **exclusivas** de la variante (por ejemplo, el escaldado de semillas). Su pestaña Masa final conserva la masa base preparada y las adiciones necesarias.
+
+Al seleccionar **Desde cero** aparecen tanto las elaboraciones heredadas como las propias, y la masa final vuelve a mostrar el proceso completo desde ingredientes. El motor interno conserva la formulación completa en ambos modos; solo cambian las instrucciones de elaboración.
+
+En el **planificador global**, las elaboraciones de la masa base siguen apareciendo **una vez en el amasado común** si hay variantes que utilizan esa masa, pero nunca se presentan de nuevo como tareas de cada variante. Si una variante se elabora desde cero, sus elaboraciones heredadas aparecen dentro de su preparación individual. Esta diferencia se respeta en el Excel.
+
+Las pruebas V5 de `test.js` cubren el cambio de modo, las pestañas, el editor, el Excel y la conservación de masa.

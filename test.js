@@ -223,4 +223,62 @@ oldWaterVariant.elabs=[{id:'legacy',name:'Escaldado V3',ings:[
 const oldInput=V3.calculateVariant(oldWaterVariant,2080);
 const converted=VW.__x("migrateVariantWaterRows("+JSON.stringify(oldWaterVariant)+")");
 ok('V4 interpretacion antigua de agua mantiene masa',near(oldInput.stage.elabCalcs[0].total,400)&&converted);
+// ── TESTS V5: mostrar elaboraciones heredadas solo al elaborar desde cero ──
+const motherBase=white();motherBase.elabs=[{id:8,name:'Masa madre',ings:[
+  {id:80,type:'flour',flourId:0,pct:20},{id:81,type:'water',pct:100}]}];
+const motherVariant={...ownSeed,id:'v5-variant',name:'Semillas con madre'};
+const MW=boot([motherBase,motherVariant]);const M=MW.__s;
+M.aid='v5-variant';M.showDetail();
+const tabLabels=()=>[...MW.document.querySelectorAll('#d_res_nav .res-tab')].map(e=>e.textContent.trim());
+const fromBaseTabs=tabLabels();
+ok('V5 desde masa base: no muestra pestaña heredada Masa madre',
+  fromBaseTabs.join('|')==='Resumen|Escaldado de semillas|Masa final',fromBaseTabs.join('|'));
+MW.__x('setResTab(1)');
+ok('V5 desde masa base: solo se explica el escaldado propio',
+  MW.document.getElementById('d_res_body').textContent.includes('Escaldado')&&!MW.document.getElementById('d_res_body').textContent.includes('Masa madre'));
+MW.__x('setResTab(2)');
+ok('V5 masa final desde base incluye masa preparada y escaldado propio',
+  MW.document.getElementById('d_res_body').textContent.includes('Masa base:')&&
+  MW.document.getElementById('d_res_body').textContent.includes('Escaldado')&&
+  !MW.document.getElementById('d_res_body').textContent.includes('Masa madre'));
+MW.__x("openVariantEditor('v5-variant')");
+ok('V5 editor desde masa base no lista preelaboraciones heredadas',
+  !MW.document.getElementById('variant_inherited').textContent.includes('Masa madre'));
+MW.__x('closeVariantEditor();changeVariantMode("scratch")');
+const scratchTabs=tabLabels();
+ok('V5 desde cero: aparecen la Masa madre y el Escaldado',
+  scratchTabs.join('|')==='Resumen|Masa madre|Escaldado de semillas|Masa final',scratchTabs.join('|'));
+MW.__x('setResTab(1)');
+ok('V5 desde cero: contenido de masa madre realmente visible',
+  MW.document.getElementById('d_res_body').textContent.includes('Trigo')&&
+  MW.document.getElementById('d_res_body').textContent.includes('Agua'));
+MW.__x("openVariantEditor('v5-variant')");
+ok('V5 editor desde cero sí lista Masa madre heredada',
+  MW.document.getElementById('variant_inherited').textContent.includes('Masa madre'));
+MW.__x('closeVariantEditor();changeVariantMode("base")');
+ok('V5 al volver desde cero a base desaparece la pestaña heredada',
+  tabLabels().length===3&&!tabLabels().includes('Masa madre')&&
+  MW.document.querySelector('#d_res_nav .res-tab.active')?.textContent==='Resumen');
+const plannedBase=M.calculateGlobalProduction({id:'pb',name:'Solo base',rows:{'v5-variant':{pieces:1,weight:2080,mode:'base'}},extras:{}});
+const baseExcel=M.globalProductionWorkbookData(plannedBase).find(x=>x.name==='Elaboraciones').rows;
+ok('V5 Excel desde base incluye Masa madre solo en el amasado común',
+  baseExcel.some(r=>r[0]==='Amasado común'&&r[2]==='Masa madre')&&
+  !baseExcel.some(r=>r[0]==='Exclusiva de variante'&&r[2]==='Masa madre'));
+const plannedScratch=M.calculateGlobalProduction({id:'ps',name:'Solo cero',rows:{'v5-variant':{pieces:1,weight:2080,mode:'scratch'}},extras:{}});
+const scratchExcel=M.globalProductionWorkbookData(plannedScratch).find(x=>x.name==='Elaboraciones').rows;
+ok('V5 Excel desde cero prepara masa madre en la variante',
+  scratchExcel.some(r=>r[0]==='Desde cero'&&r[2]==='Masa madre'));
+ok('V5 fórmulas conservan mismo peso desde cero y desde base',
+  near(plannedBase.productMass,plannedScratch.productMass)&&
+  near(plannedBase.purchasedMass,plannedScratch.purchasedMass));
+
+// V5 sin elaboraciones exclusivas: el modo base no genera pestañas vacías.
+const MB=boot([motherBase,{...motherVariant,id:'v5-empty',elabs:[]}]);
+MB.__s.aid='v5-empty';MB.__s.showDetail();
+ok('V5 sin elaboraciones propias: solo Resumen y Masa final',
+  [...MB.document.querySelectorAll('#d_res_nav .res-tab')].map(x=>x.textContent).join('|')==='Resumen|Masa final');
+MB.__x('changeVariantMode("scratch")');
+ok('V5 desde cero recupera Masa madre sin elaboraciones propias',
+  [...MB.document.querySelectorAll('#d_res_nav .res-tab')].map(x=>x.textContent).join('|')==='Resumen|Masa madre|Masa final');
+
 console.log(fails?fails+' FALLOS':'TODO OK');

@@ -243,6 +243,9 @@ function changeVariantMode(mode){
   if(mode!=='base'&&mode!=='scratch')return;
   const r=recipes.find(x=>x.id===activeId);
   if(!r||!r.baseId)return;
+  // Al cambiar de etapa desaparecen o aparecen pestañas de elaboraciones.
+  // Volver al resumen evita que el índice anterior apunte a otra preparación.
+  resTab=0;
   r.productionMode=mode;save();renderFamilyActions();calcDetail();
 }
 
@@ -261,7 +264,10 @@ function openVariantEditor(variantId=null,baseId=null){
   document.getElementById('variant_notes').value=v?v.notes||'':'';
   document.getElementById('variant_title').textContent=v?'Editar variante':'Nueva variante';
   document.getElementById('variant_base_label').textContent=b.name;
-  document.getElementById('variant_inherited').innerHTML=`<div class="field-hint">Harinas: ${(b.flours||[]).map(x=>esc(x.name)+' '+g1(x.pct)+'%').join(' · ')}</div><div class="field-hint">${(b.ings||[]).map(x=>esc(x.name)+' '+g1(x.pct)+'%').join(' · ')}</div><div class="field-hint">${(b.elabs||[]).length?'Elaboraciones heredadas: '+(b.elabs||[]).map(x=>esc(x.name)).join(', '):'Sin elaboraciones previas.'}</div>`;
+  // En el editor solo enumeramos las preelaboraciones heredadas cuando
+  // la variante se prepara desde cero. Desde masa base ya están preparadas.
+  const scratch=v?.productionMode==='scratch';
+  document.getElementById('variant_inherited').innerHTML=`<div class="field-hint">Harinas: ${(b.flours||[]).map(x=>esc(x.name)+' '+g1(x.pct)+'%').join(' · ')}</div><div class="field-hint">${(b.ings||[]).map(x=>esc(x.name)+' '+g1(x.pct)+'%').join(' · ')}</div>${scratch&&b.elabs?.length?`<div class="field-hint">Elaboraciones heredadas a preparar: ${b.elabs.map(x=>esc(x.name)).join(', ')}</div>`:''}`;
   renderVariantAdditions();renderVariantElabs();document.getElementById('variant_overlay').classList.add('open');
 }
 function closeVariantEditor(){document.getElementById('variant_overlay').classList.remove('open');variantEditingId=null;}
@@ -384,14 +390,19 @@ function calcVariantDetail(v,pieces,unitW,errEl,resWrap){
   try{c=calculateVariant(v,pieces*unitW);}catch(e){errEl.textContent=e.message;errEl.classList.add('show');return;}
   const mode=v.productionMode||'base';
   const d=c.fullCalc;
-  lastCalc={...d,variant:c,mode,r:mode==='scratch'?c.effective:v,
+  // La fórmula completa permanece intacta para el resumen y los cálculos.
+  // Solo las pestañas operativas dependen de la etapa seleccionada:
+  //  - desde base: únicamente las elaboraciones propias de la variante;
+  //  - desde cero: también las heredadas de la receta base.
+  const visibleElabs=mode==='scratch'?d.elabCalcs:c.stage.elabCalcs;
+  lastCalc={...d,elabCalcs:visibleElabs,variant:c,mode,r:mode==='scratch'?c.effective:v,
     amasadoData:mode==='scratch'?d.amasadoData:{recipeName:v.name,waterMass:c.stage.waterRemaining,
       ings:[{name:'Masa base: '+c.base.name,mass:c.baseMass,temp:20},...c.stage.finalRows.filter(a=>a.tag!=='water'&&a.final>0).map(a=>({name:a.name,mass:a.final,temp:20})),...c.stage.elabCalcs.filter(e=>e.total>0).map(e=>({name:'Elaboración: '+e.name,mass:e.total,temp:20}))]}};
   const hyd=getHydration(c.effective);
   document.getElementById('d_chips').innerHTML=`<span class="tag tag-elab">Variante de ${esc(c.base.name)}</span>${hyd!=null?`<span class="tag tag-water">Hid. ${g1(hyd)}%</span>`:''}<span class="tag">${g1(c.totalMass)} g</span>`;
   if(v.weight!==unitW||v.pieces!==pieces){v.weight=unitW;v.pieces=pieces;save();}
   resWrap.style.display='block';
-  buildResTabs(c.fullCalc.elabCalcs);
+  buildResTabs(visibleElabs);
   renderResTab(resTab);
   const btn=resWrap.querySelector('.btn-goto-amasado');
   if(btn){btn.style.display=lastCalc.amasadoData.waterMass>0.000001?'':'none';}
@@ -401,22 +412,20 @@ function renderVariantResTab(i){
   if(i===state.elabCalcs.length+1 && mode==='base'){
     const body=document.getElementById('d_res_body');
     let html=`<div class="card"><div class="card-hdr">Incorporar a la masa final</div>`;
-    html+=massRow('Masa base: '+c.base.name,c.baseMass,'Contiene todos sus ingredientes y elaboraciones previas');
+    html+=massRow('Masa base: '+c.base.name,c.baseMass,'Masa base ya preparada');
     c.stage.elabCalcs.forEach(e=>{html+=massRow('Elaboración previa: '+e.name,e.total,'Preparada aparte para esta variante');});
     c.stage.finalRows.filter(a=>a.final>0.000001).forEach(a=>{html+=massRow(a.name,a.final,'Pendiente de incorporar');});
     html+=`</div><div class="total-bar"><span class="total-bar-lbl">Masa final</span><span class="total-bar-val">${g1(c.totalMass)} g</span></div>`;
     body.innerHTML=html;
     return;
   }
-  // Reutilizar íntegramente el renderizador clásico para el resumen,
-  // las elaboraciones heredadas y el modo «desde cero».
+  // Resumen = composición completa; detalle de elaboraciones = solo
+  // las que realmente hay que preparar según el modo de producción.
   lastCalc={...state,variant:null,r:c.effective};
   try{renderResTab(i);}finally{lastCalc=state;}
   if(i>0&&i<=state.elabCalcs.length&&mode==='base'){
-    const inherited=i<=c.baseCalc.elabCalcs.length;
-    document.getElementById('d_res_body').insertAdjacentHTML('afterbegin', inherited
-      ?'<div class="alert alert-ok show">Esta elaboración ya está incluida en la masa base. No la incorpores de nuevo a la variante.</div>'
-      :'<div class="alert alert-warn show">Esta elaboración es exclusiva de la variante. Prepárala aparte y añádela durante la transformación.</div>');
+    document.getElementById('d_res_body').insertAdjacentHTML('afterbegin',
+      '<div class="alert alert-warn show">Elaboración propia de la variante. Prepárala aparte y añádela durante la transformación.</div>');
   }
 }
 
