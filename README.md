@@ -1,4 +1,4 @@
-# Pan & Agua v7 · Selección múltiple de panes en producción
+# Pan & Agua v8 · Planificación guiada por familias y etapas
 
 Esta versión amplía el recetario y el planificador global de V5 sin cambiar las claves de almacenamiento (`pan_v4` para recetas y `pan_global_plans_v1` para planes) ni requerir un servidor de aplicaciones.
 
@@ -60,3 +60,55 @@ Después abre `http://localhost:8000`. Para ejecutar las pruebas funcionales, in
 En la pestaña **Producción**, el control **Elige un pan para añadir...** ahora abre una lista de casillas de verificación. Marca tantos panes como desees y pulsa **Añadir** una sola vez. El botón permanece desactivado si no hay ninguno seleccionado. Los panes que ya forman parte del plan no vuelven a aparecer en la lista. Si desmarcas uno antes de confirmar, no se añade; cambiar de plan descarta la selección temporal no confirmada. Cerrar el desplegable sin añadir no cambia el plan.
 
 La selección no afecta al cálculo ni al almacenamiento hasta que pulses **Añadir**. Se mantienen los modos por receta, las masas compartidas, las preelaboraciones y la exportación Excel de V6.
+
+
+## V8: nueva guía de producción, análisis y decisiones de diseño
+
+**Diagnóstico previo:** la V7 concatenaba en un mismo scroll todas las etapas y todos los panes. Además, al mostrar la masa final de una receta original usaba `summaryRows` (ingredientes sin descontar), por lo que no daba instrucciones operativas equivalentes a las del recetario. Las elaboraciones previas debían calcularse por separado y añadirse explícitamente a la masa final.
+
+**Modelo y arquitectura aplicados:**
+
+- Se mantiene intacta la base matemática `calculateRecipeFormula` → `calculateVariant` → `calculateGlobalProduction`, con las mismas claves de `localStorage` y el mismo esquema de recetas. No se migran datos por el rediseño.
+- Se añade `planner-ui.js`, una capa de presentación que deriva familias y etapas de los resultados del cálculo global. `buildPlanPresentation(calc)` no altera recetas, planes ni almacenamiento.
+- La navegación se separa en tres niveles: **familia**, **etapa de amasado** y **vista** (Ingredientes, Elaboraciones, Masa final, Reparto). Solo se visualiza una etapa y una vista cada vez, no una lista mezclada de todas las variantes.
+- Un amasado compartido aparece **una sola vez** en su etapa. Una variante preparada desde cero aparece como **elaboración independiente** dentro de su familia, con sus elaboraciones heredadas, y no se mezcla con los ingredientes de una masa anterior.
+- La selección y las cantidades del plan están en un panel plegable. El botón «Ver guía de elaboración» permite pasar directamente a las instrucciones y cerrar la edición sin perder datos.
+
+**Reglas operativas:**
+
+1. **Ingredientes**: materias primas de la etapa completa, *antes de descontar*. Para una transformación se muestra «Masa anterior» más ingredientes adicionales; su formulación química completa queda disponible en un desplegable informativo, no como nuevas pesadas.
+2. **Elaboraciones**: un bloque por preelaboración de **esa etapa** con todos los ingredientes y la masa total. Las heredadas solo se muestran cuando se está elaborando desde cero; en un amasado compartido aparecen en la etapa donde se preparan.
+3. **Masa final**: utiliza `finalRows` para descontar los ingredientes empleados en preelaboraciones, añade dichas preelaboraciones como ingredientes preparados e incorpora, si corresponde, la masa anterior ya mezclada. Esta vista incluye un balance legible.
+4. **Reparto**: cantidades asignadas a panes terminados, transferencias a etapas hijas y excedentes. La suma debe igualar la masa preparada.
+5. **Ingredientes totales**: pestaña separada con materias primas consolidadas de todo el plan, sin duplicar masas ni preelaboraciones.
+
+**Invariantes exigidos antes de pintar una etapa:**
+
+- `Σ ingredientes iniciales de la etapa = masa de la etapa`.
+- `masa anterior + Σ ingredientes pendientes + Σ elaboraciones previas = masa de la etapa`.
+- `Σ masa destinada a productos + Σ transferencia a etapas hijas + excedente = masa de la etapa`.
+- El balance global sigue siendo `materias primas adquiridas = peso de panes + excedentes`.
+
+Las comparaciones usan las cantidades internas no redondeadas, con una tolerancia de `0,00001 g` como en el resto de la aplicación. El redondeo a una décima se realiza solo para mostrar los resultados; por ello sumas visuales pueden diferir unas décimas del total.
+
+**Excel:** se conserva la exportación XLSX con siete hojas y sus etapas, ingredientes, elaboraciones, amasados finales, reparto y aprovisionamiento. El libro exportado es una fotografía de la producción del momento: para cambiar cantidades hay que recalcular y exportar nuevamente desde la aplicación.
+
+**Pruebas ejecutadas en Chromium:** `python test-browser.py` (75 comprobaciones preexistentes) y `python test-v8-ui.py` (37 comprobaciones nuevas), **112 comprobaciones satisfactorias** en total. Incluyen masas compartidas multinivel, poolish de origen, escaldados exclusivos, «desde cero», pan independiente, excedentes, conservación de masa, pestañas por familia, formularios plegables, persistencia y Excel realmente descargado con sus siete hojas. `test.js` permanece incluido, aunque su ejecución en Node requiere `npm install` para `jsdom` (el paquete no se encontraba en el caché npm de este entorno).
+
+### Archivos modificados
+
+- `global-planner.js`: delega únicamente la construcción visual a la nueva vista y valida resultados antes de mostrarlos.
+- `planner-ui.js`: nuevo modelo de presentación, navegación e instrucciones de elaboración por etapa.
+- `index.html`: carga del nuevo módulo y sección plegable de configuración.
+- `styles.css`: estilos móviles para familias, etapas, subpestañas y fichas de trabajo.
+- `test-browser.py`: carga también el módulo de presentación para las pruebas originales.
+- `test-v8-ui.py`: pruebas end-to-end nuevas de las instrucciones y de la exportación.
+- `ejemplo_plan_v8.xlsx` y capturas de pantalla: datos de una producción mixta validada para inspección.
+
+### Cómo ejecutar
+
+```bash
+python -m http.server 8000
+```
+
+Desde la carpeta que contiene `index.html`, visita `http://localhost:8000`. Para ejecutar las pruebas del navegador requiere `playwright` y Chromium instalados; en otra máquina puede ser necesario cambiar la ruta a Chromium definida en los scripts de prueba.

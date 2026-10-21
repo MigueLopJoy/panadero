@@ -210,14 +210,18 @@ function setGlobalExtra(id,value){
 }
 function createGlobalPlan(){
   const id=uid();globalPlans[id]={id,name:'Nueva producción',rows:{},extras:{}};
-  currentGlobalPlanId=id;pendingGlobalRecipeIds.clear();saveGlobalPlans();renderGlobalPlanner();
+  currentGlobalPlanId=id;pendingGlobalRecipeIds.clear();
+  planSelectedFamily=null;planSelectedStage=null;planSelectedPane='final';
+  saveGlobalPlans();renderGlobalPlanner();
 }
-function chooseGlobalPlan(id){if(!globalPlans[id])return;currentGlobalPlanId=id;pendingGlobalRecipeIds.clear();saveGlobalPlans();renderGlobalPlanner();}
+function chooseGlobalPlan(id){if(!globalPlans[id])return;currentGlobalPlanId=id;pendingGlobalRecipeIds.clear();planSelectedFamily=null;planSelectedStage=null;planSelectedPane='final';saveGlobalPlans();renderGlobalPlanner();}
 function renameGlobalPlan(name){activeGlobalPlan().name=name;saveGlobalPlans();}
 function deleteGlobalPlan(){
   if(Object.keys(globalPlans).length===1){alert('Debe existir al menos un plan. Puedes vaciar sus recetas.');return;}
   if(!confirm('¿Eliminar este plan de producción? Las recetas permanecerán intactas.'))return;
-  delete globalPlans[currentGlobalPlanId];currentGlobalPlanId=Object.keys(globalPlans)[0];pendingGlobalRecipeIds.clear();saveGlobalPlans();renderGlobalPlanner();
+  delete globalPlans[currentGlobalPlanId];currentGlobalPlanId=Object.keys(globalPlans)[0];pendingGlobalRecipeIds.clear();
+  planSelectedFamily=null;planSelectedStage=null;planSelectedPane='final';
+  saveGlobalPlans();renderGlobalPlanner();
 }
 function globalRemoveRecipe(id){
   for(const p of Object.values(globalPlans)){
@@ -247,63 +251,29 @@ function renderGlobalPlanner(){
   }).join('')||'<div class="empty-state">El plan está vacío. Añade cualquier receta del recetario para comenzar.</div>';
   renderGlobalResults();
 }
+function openPlanGuide(){
+  const editor=document.getElementById('global_plan_editor');
+  if(editor)editor.open=false;
+  const guide=document.getElementById('global_plan_results');
+  if(guide)guide.scrollIntoView({behavior:'smooth',block:'start'});
+}
 function renderGlobalResults(){
   const error=document.getElementById('global_plan_error'),out=document.getElementById('global_plan_results');
   const button=document.getElementById('global_plan_excel');
   error.classList.remove('show');out.innerHTML='';button.disabled=true;
-  let calc;try{calc=calculateGlobalProduction(activeGlobalPlan());}
-  catch(e){error.textContent=e.message;error.classList.add('show');return;}
-  if(!calc.items.length)return;
-  button.disabled=false;
-  let h=`<div class="plan-kpis"><div class="stat"><div class="stat-lbl">Masa final de panes</div><div class="stat-val">${g1(calc.productMass)} g</div></div>
-  <div class="stat"><div class="stat-lbl">Masas por preparar (incluye extra)</div><div class="stat-val">${g1(calc.purchasedMass)} g</div></div></div>`;
-  for(const g of calc.groups){
-    h+=`<div class="card"><div class="card-hdr">${g.mode==='root'?'Amasado original':'Masa derivada'} · ${esc(g.base.name)}</div>
-    ${g.parent?massRow('Masa anterior: '+g.parent.name,g.parentMass):''}
-    ${massRow('Masa necesaria para productos y derivados',g.required)}
-    <div class="field"><label class="lbl">Excedente sin asignar (g)</label>
-      <input type="number" min="0" step="0.1" data-base-id="${esc(g.base.id)}" value="${esc(activeGlobalPlan().extras?.[g.base.id]??0)}" onchange="setGlobalExtra(this.dataset.baseId,this.value)"></div>
-    ${massRow('Masa total a preparar',g.totalBase)}
-    <div class="field-hint">${g.items.map(i=>esc(i.recipe.name)).join(' · ')}</div>`;
-    const elabs=g.mode==='transform'?g.stage.elabCalcs:g.baseCalc.elabCalcs;
-    if(elabs.length){
-      h+='<div class="section-hdr">Elaboraciones previas de esta etapa</div>';
-      for(const e of elabs){h+=`<strong>${esc(e.name)}</strong>`;e.ings.forEach(x=>h+=massRow(x.name,x.grams));h+=massRow('Total '+e.name,e.total);}
-    }
-    h+='<div class="section-hdr">Incorporaciones de esta etapa</div>';
-    if(g.mode==='transform'){
-      g.stage.finalRows.filter(x=>x.final>0.000001).forEach(x=>h+=massRow(x.name,x.final));
-      elabs.forEach(e=>h+=massRow('Preelaboración: '+e.name,e.total));
-    }else g.baseCalc.summaryRows.forEach(x=>h+=massRow(x.name,x.grams));
-    const waterMass=g.mode==='transform'?g.stage.waterRemaining:g.baseCalc.amasadoData.waterMass;
-    if(waterMass>0.00001)h+=`<button class="btn btn-sm" data-id="${esc(g.base.id)}" onclick="sendGlobalBaseToAmasado(this.dataset.id)">Temperatura de amasado</button>`;
-    h+='</div>';
-  }
-  h+='<div class="card"><div class="card-hdr">Desglose por pan</div>';
-  for(const i of calc.items){
-    h+=`<div class="plan-result-item"><strong>${esc(i.recipe.name)} · ${i.pieces} × ${g1(i.weight)} g</strong>`;
-    if(i.type==='variant'&&i.mode==='base'){
-      h+=massRow('Masa base: '+i.base.name,i.baseMass);
-      i.stage.elabCalcs.forEach(e=>{
-        h+=`<div class="field-hint">Preelaboración propia: ${esc(e.name)}</div>`;
-        e.ings.forEach(x=>h+=massRow(x.name,x.grams));
-        h+=massRow('Total '+e.name,e.total);
-      });
-      i.stage.finalRows.filter(x=>x.final>0.000001).forEach(x=>h+=massRow(x.name,x.final,'Añadir a la masa final'));
-    }else{
-      h+='<div class="field-hint">Elaboración completa e independiente</div>';
-      i.calc.elabCalcs.forEach(e=>{
-        h+=`<div class="field-hint">Preelaboración: ${esc(e.name)}</div>`;
-        e.ings.forEach(x=>h+=massRow(x.name,x.grams));
-      });
-      i.calc.finalRows.filter(x=>x.final>0.000001).forEach(x=>h+=massRow(x.name,x.final));
-    }
-    h+=massRow('Masa final de este pan',i.totalMass)+'</div>';
-  }
-  h+='</div><div class="card"><div class="card-hdr">Ingredientes totales · sin duplicaciones</div>';
-  calc.ingredientRows.forEach(x=>h+=massRow(x.name,x.grams));
-  h+='</div>';
-  out.innerHTML=h;
+  let calc;
+  try{
+    calc=calculateGlobalProduction(activeGlobalPlan());
+    if(!calc.items.length)return;
+    const oldStageScroll=out.querySelector('.plan-stage-tabs')?.scrollLeft||0;
+    const oldFamilyScroll=out.querySelector('.plan-family-tabs')?.scrollLeft||0;
+    out.innerHTML=renderPlanExperience(calc);
+    const stageNav=out.querySelector('.plan-stage-tabs');
+    const familyNav=out.querySelector('.plan-family-tabs');
+    if(stageNav)stageNav.scrollLeft=oldStageScroll;
+    if(familyNav)familyNav.scrollLeft=oldFamilyScroll;
+    button.disabled=false;
+  }catch(e){error.textContent=e.message;error.classList.add('show');}
 }
 function sendGlobalBaseToAmasado(baseId){
   let calc;try{calc=calculateGlobalProduction(activeGlobalPlan());}catch(e){alert(e.message);return;}

@@ -112,6 +112,8 @@
     <div class="field"><label class="lbl">Nombre del plan</label><input id="global_plan_name" type="text" oninput="renameGlobalPlan(this.value)"></div>
     <button class="btn btn-danger btn-xs" onclick="deleteGlobalPlan()">Eliminar este plan</button>
   </div>
+  <details class="plan-setup-details" id="global_plan_editor" open>
+    <summary>Configurar panes, cantidades y modos de elaboración</summary>
   <div class="card"><div class="card-hdr">Añadir panes de cualquier familia</div>
     <div class="field"><label class="lbl" id="global_recipe_picker_label">Recetas disponibles</label>
       <div class="irow recipe-picker-row">
@@ -126,7 +128,9 @@
       </div>
     </div>
     <div id="global_plan_rows"></div>
+    <button type="button" class="btn btn-primary btn-full plan-guide-link" onclick="openPlanGuide()">Ver guía de elaboración ↓</button>
   </div>
+  </details>
   <div class="alert alert-err" id="global_plan_error"></div>
   <div id="global_plan_results"></div>
   <button class="btn btn-primary btn-full" id="global_plan_excel" onclick="exportGlobalProductionExcel()" disabled>Exportar plan completo a Excel (.xlsx)</button>
@@ -376,6 +380,7 @@
 <script src="scripts.js"></script>
 <script src="production.js"></script>
 <script src="global-planner.js"></script>
+<script src="planner-ui.js"></script>
 <script src="excel-export.js"></script>
 </body>
 </html>

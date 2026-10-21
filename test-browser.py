@@ -9,7 +9,7 @@ html=html.replace('</head>', '<style>'+(ROOT/'styles.css').read_text()+'</style>
 html=html.replace('<script src="scripts.js"></script>', '''<script>
 Object.defineProperty(window,'localStorage',{value:{_d:{},getItem(k){return this._d[k]??null},setItem(k,v){this._d[k]=String(v)},removeItem(k){delete this._d[k]}}});
 </script><script>'''+(ROOT/'scripts.js').read_text()+'</script>')
-for filename in ('production.js','global-planner.js','excel-export.js'):
+for filename in ('production.js','global-planner.js','planner-ui.js','excel-export.js'):
  html=html.replace(f'<script src="{filename}"></script>','<script>'+(ROOT/filename).read_text()+'</script>')
 
 WHITE={"id":"base","name":"Masa blanca","flours":[{"id":0,"name":"Trigo","pct":100}],"ings":[{"id":0,"name":"Agua","pct":65},{"id":1,"name":"Sal","pct":2},{"id":2,"name":"Levadura","pct":1}],"elabs":[]}
