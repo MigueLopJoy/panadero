@@ -304,3 +304,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 .variant-elab-row input,.variant-elab-row select{font-size:.79rem;padding:.45rem .5rem;min-width:0}
 .variant-elab-buttons{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.5rem}
 #variant_elabs{margin-top:.4rem}
+
+/* V4 · El agua tiene su propia fila y una base de hidratación independiente */
+.variant-water-row{grid-template-columns:minmax(0,1fr) minmax(75px,.6fr) 30px;gap:6px;padding:.5rem .55rem;background:var(--blue-l);border-radius:10px;border:1px solid var(--border)}
+.variant-water-label{display:flex;gap:6px;align-items:center;font-size:.83rem;font-weight:600;color:var(--blue)}
+.variant-water-row .variant-water-basis-label{grid-column:1/-1;margin-top:3px}
+.variant-water-row .variant-water-basis{grid-column:1/-1;background:var(--surface)}
+.variant-solid-row select{min-width:0}
+#variant_water_info{margin:.5rem 0;line-height:1.5}

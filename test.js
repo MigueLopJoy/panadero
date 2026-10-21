@@ -176,4 +176,51 @@ V3.openVariantEditor('own');VW.__x('saveVariant()');
 ok('V3 guarda elaboraciones de la variante',!!V3.recipes.find(r=>r.id==='own').elabs?.[0]?.ings?.[1]?.baseId);
 V3.addToGlobalPlan('integral');
 ok('V3 plan independiente persistido',!!V3.activePlan.rows.integral&&!!JSON.parse(VW.localStorage.getItem('pan_global_plans_v1')).plans[V3.activePlan.id].rows.integral);
+// ── TESTS V4: agua explícita, bases de hidratación y límites ──
+const v4Mixed={...ownSeed,
+  additions:[{id:'seed',name:'Semillas',pct:20},{id:'flour',name:'Harina de fuerza',pct:10},{id:'water',name:'Agua',pct:30}],
+  elabs:[{id:'mixed',name:'Escaldado mixto',ings:[
+    {id:'water0',type:'water',baseId:'all',pct:100},
+    {id:'seed0',type:'other',ingId:'addition:seed',pct:20},
+    {id:'flour0',type:'other',ingId:'addition:flour',pct:10}]}]};
+const mixedCalc=V3.calculateVariant(v4Mixed,2280);
+ok('V4 agua sobre todos los ingredientes, incluso si la fila aparece primero',
+  near(mixedCalc.stage.waterInElabs,300)&&near(mixedCalc.stage.elabCalcs[0].total,600));
+ok('V4 mezcla sin duplicar agua ni perder masa base',
+  near(mixedCalc.stage.waterRemaining,0)&&near(mixedCalc.baseMass,1680));
+const single=JSON.parse(JSON.stringify(v4Mixed));single.elabs[0].ings[0].baseId='seed0';
+const singleCalc=V3.calculateVariant(single,2280);
+ok('V4 agua sobre un solo ingrediente: queda agua sin usar',
+  near(singleCalc.stage.waterInElabs,200)&&near(singleCalc.stage.waterRemaining,100));
+const lowWater=JSON.parse(JSON.stringify(v4Mixed));lowWater.additions.find(x=>x.name==='Agua').pct=29;
+let lowWaterMsg='';try{V3.calculateVariant(lowWater,2270);}catch(e){lowWaterMsg=e.message;}
+ok('V4 agua insuficiente impide guardar/calcular',/agua/i.test(lowWaterMsg));
+const twoElabs=JSON.parse(JSON.stringify(ownSeed));twoElabs.elabs=[
+  {id:'a',name:'A',ings:[{id:'s1',type:'other',ingId:'addition:seed',pct:10},{id:'w1',type:'water',baseId:'all',pct:100}]},
+  {id:'b',name:'B',ings:[{id:'s2',type:'other',ingId:'addition:seed',pct:10},{id:'w2',type:'water',baseId:'all',pct:100}]}];
+ok('V4 dos elaboraciones comparten correctamente el agua',near(V3.calculateVariant(twoElabs,2080).stage.waterRemaining,0));
+twoElabs.elabs[1].ings[1].pct=110;
+let overMsg='';try{V3.calculateVariant(twoElabs,2080);}catch(e){overMsg=e.message;}
+ok('V4 exceso acumulado de agua rechazado',/agua/i.test(overMsg));
+VW.__x("openVariantEditor('own');addVariantElabRow('esc','water')");
+ok('V4 + Agua crea fila dedicada y no selector de otros ingredientes',
+  VW.document.querySelectorAll('.variant-water-row').length===2&&
+  VW.document.querySelector('.variant-water-row .variant-water-label').textContent.includes('Agua')&&
+  VW.document.querySelector('.variant-water-basis').value==='all');
+ok('V4 selector de ingredientes no ofrece Agua como sólido',
+  ![...VW.document.querySelectorAll('.variant-solid-row select option')].some(e=>e.textContent.trim()==='Agua'));
+const classic=JSON.parse(JSON.stringify(white()));classic.ings.push({id:7,name:'Semillas',pct:10});classic.ings[0].pct=95;
+classic.elabs=[{id:1,name:'Harina y semillas',ings:[
+  {id:0,type:'water',pct:100,baseId:'all'},
+  {id:1,type:'flour',flourId:0,pct:20},
+  {id:2,type:'other',ingId:7,pct:10}]}];
+ok('V4 receta tradicional calcula hidratación sobre harina más otros',
+  near(V3.calculateRecipeFormula(classic,2080).deductW,300));
+const oldWaterVariant=JSON.parse(JSON.stringify(ownSeed));
+oldWaterVariant.elabs=[{id:'legacy',name:'Escaldado V3',ings:[
+  {id:'seeds',type:'other',ingId:'addition:seed',pct:20},
+  {id:'oldwater',type:'other',ingId:'addition:water',pct:20}]}];
+const oldInput=V3.calculateVariant(oldWaterVariant,2080);
+const converted=VW.__x("migrateVariantWaterRows("+JSON.stringify(oldWaterVariant)+")");
+ok('V4 interpretacion antigua de agua mantiene masa',near(oldInput.stage.elabCalcs[0].total,400)&&converted);
 console.log(fails?fails+' FALLOS':'TODO OK');

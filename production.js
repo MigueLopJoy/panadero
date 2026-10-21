@@ -53,6 +53,35 @@ function checkAdditions(v){
     ids.add(String(a.id));
   });
 }
+// Compatibilidad con recetas V3: el error de la interfaz llevaba a algunos
+// usuarios a escoger «Agua» como si fuera otro ingrediente del escaldado.
+// Convertimos esa cantidad, expresada sobre harina total, a una hidratación
+// sobre todos los sólidos de la elaboración, SIN alterar los gramos de agua.
+function migrateVariantWaterRows(v){
+  if(!v?.baseId||!Array.isArray(v.elabs))return false;
+  let changed=false;
+  for(const elab of v.elabs){
+    const rows=elab.ings||[];
+    const solids=rows.filter(r=>r.type==='flour'||(r.type==='other'&&
+      !isWaterName(v.additions?.find(a=>'addition:'+a.id===r.ingId)?.name)));
+    const solidsPct=solids.reduce((sum,r)=>sum+(Number(r.pct)||0),0);
+    if(!(solidsPct>0))continue; // Conservar registros incompletos para corregirlos manualmente.
+    for(const r of rows){
+      const source=r.type==='other'?v.additions?.find(a=>'addition:'+a.id===r.ingId):null;
+      if(!source||!isWaterName(source.name))continue;
+      const previousWaterPct=Number(r.pct);
+      if(!Number.isFinite(previousWaterPct)||previousWaterPct<0)continue;
+      r.type='water';r.baseId='all';r.pct=100*previousWaterPct/solidsPct;
+      delete r.ingId;changed=true;
+    }
+  }
+  return changed;
+}
+function migrateStoredVariantWaterRows(){
+  let changed=false;
+  recipes.forEach(v=>{if(migrateVariantWaterRows(v))changed=true;});
+  if(changed)save();
+}
 // Devuelve un objeto virtual completo de la variante. Los IDs heredados
 // se preservan para que las elaboraciones de la receta base sigan apuntando
 // al ingrediente correcto. Los nuevos IDs usan un espacio de nombres propio.
@@ -63,7 +92,11 @@ function variantElabRecipe(v,flourG){
   const elabs=(v.elabs||[]).map(e=>({...e,ings:(e.ings||[]).map(row=>({...row}))}));
   for(const e of elabs)for(const r of e.ings){
     if(r.type==='flour')throw Error('Las elaboraciones exclusivas deben prepararse con ingredientes adicionales, no con harina ya mezclada en la masa base. Añade la harina como ingrediente adicional.');
-    if(r.type==='other'&&!ingredients.some(i=>i.id===r.ingId))throw Error('«'+e.name+'» usa un ingrediente que no pertenece a los adicionales de esta variante.');
+    if(r.type==='other'){
+      const target=ingredients.find(i=>i.id===r.ingId);
+      if(!target)throw Error('«'+e.name+'» usa un ingrediente que no pertenece a los adicionales de esta variante.');
+      if(isWaterName(target.name))throw Error('En «'+e.name+'», el agua debe añadirse con el botón «+ Agua», no como ingrediente de la elaboración.');
+    }
     if(r.type==='water'&&r.baseId==null)throw Error('El agua en «'+e.name+'» debe referirse a un ingrediente añadido de la misma elaboración.');
   }
   // La harina virtual solo fija la referencia de porcentajes panaderos.
@@ -95,6 +128,12 @@ function effectiveVariantRecipe(v,base){
 }
 function calculateVariant(v,totalMass){
   if(!v.baseId) throw Error('No es una variante.');
+  // Admite registros V3 proporcionados directamente, sin modificar su origen.
+  if((v.elabs||[]).some(e=>(e.ings||[]).some(r=>r.type==='other'&&
+      isWaterName(v.additions?.find(a=>'addition:'+a.id===r.ingId)?.name)))){
+    v={...v,elabs:(v.elabs||[]).map(e=>({...e,ings:(e.ings||[]).map(r=>({...r}))}))};
+    migrateVariantWaterRows(v);
+  }
   if(!Number.isFinite(totalMass)||totalMass<=0) throw Error('El peso de producción debe ser positivo.');
   const base=getFamilyBase(v);
   const bf=baseFactor(base);
@@ -228,7 +267,7 @@ function openVariantEditor(variantId=null,baseId=null){
 function closeVariantEditor(){document.getElementById('variant_overlay').classList.remove('open');variantEditingId=null;}
 function addVariantIngredient(){variantAdditions.push({id:uid(),name:'',pct:0});renderVariantAdditions();renderVariantElabs();}
 function removeVariantIngredient(id){variantAdditions=variantAdditions.filter(a=>a.id!==id);renderVariantAdditions();renderVariantElabs();}
-function setVariantIngredient(id,field,value){const a=variantAdditions.find(a=>a.id===id);if(a)a[field]=value;if(field==='name')renderVariantElabs();}
+function setVariantIngredient(id,field,value){const a=variantAdditions.find(a=>a.id===id);if(a)a[field]=value;if(field==='name')renderVariantElabs();else refreshVariantWaterInfo();}
 function renderVariantAdditions(){
   const el=document.getElementById('variant_ings');
   el.innerHTML=variantAdditions.map(a=>`<div class="addition-row" data-addition-id="${esc(a.id)}">
@@ -244,12 +283,14 @@ function setVariantElabName(id,name){const e=variantElabs.find(e=>e.id===id);if(
 function addVariantElabRow(elabId,type){
   const e=variantElabs.find(x=>x.id===elabId);if(!e)return;
   if(type==='other'){
-    if(!variantAdditions.length){alert('Añade primero el ingrediente a la variante.');return;}
-    e.ings.push({id:uid(),type:'other',ingId:'addition:'+variantAdditions[0].id,pct:0});
+    const first=variantAdditions.find(a=>!isWaterName(a.name));
+    if(!first){alert('Añade primero a los ingredientes adicionales la harina, semillas u otro ingrediente que utilizarás en esta elaboración. El agua se añade con «+ Agua».');return;}
+    e.ings.push({id:uid(),type:'other',ingId:'addition:'+first.id,pct:0});
   }else{
-    const ref=e.ings.find(x=>x.type==='other');
-    if(!ref){alert('Añade antes un ingrediente al escaldado o remojo.');return;}
-    e.ings.push({id:uid(),type:'water',baseId:ref.id,pct:100});
+    // El botón Agua crea siempre una fila de agua, no otra fila de ingrediente.
+    // "all" comprende la harina y los demás sólidos de esta elaboración;
+    // podrá elegirse luego un sólido individual si se desea.
+    e.ings.push({id:uid(),type:'water',baseId:'all',pct:100});
   }
   renderVariantElabs();
 }
@@ -259,24 +300,55 @@ function delVariantElabRow(elabId,rowId){
 }
 function setVariantElabRow(elabId,rowId,field,value){
   const e=variantElabs.find(x=>x.id===elabId),r=e?.ings.find(x=>x.id===rowId);
-  if(r)r[field]=value;
+  if(!r)return;
+  r[field]=value;
+  if(field==='ingId')renderVariantElabs();
+  else refreshVariantWaterInfo();
+}
+function refreshVariantWaterInfo(){
+  const el=document.getElementById('variant_water_info');if(!el)return;
+  const water=variantAdditions.find(a=>isWaterName(a.name));
+  const available=water?Number(water.pct)||0:0;
+  const used=elabWaterPct(variantElabs);
+  const anyWater=variantElabs.some(e=>(e.ings||[]).some(r=>r.type==='water'));
+  if(!anyWater){el.textContent='';el.style.color='';return;}
+  el.textContent='Agua destinada a elaboraciones: '+used.toFixed(2)+' % de '+available.toFixed(2)+' % de agua adicional (porcentajes sobre la harina total).'+
+    (!water?' Añade «Agua» a los ingredientes adicionales de la variante.':'');
+  el.style.color=used>available+0.000001||!water?'var(--red)':'var(--text2)';
 }
 function renderVariantElabs(){
   const el=document.getElementById('variant_elabs');if(!el)return;
   el.innerHTML=variantElabs.map(e=>{
     const sources=e.ings.filter(x=>x.type==='other');
     const rows=e.ings.map(r=>{
-      let options='';
-      if(r.type==='other')options=variantAdditions.map(a=>`<option value="${esc('addition:'+a.id)}" ${r.ingId==='addition:'+a.id?'selected':''}>${esc(a.name||'Ingrediente sin nombre')}</option>`).join('');
-      else options=sources.map(a=>{
-        const match=variantAdditions.find(x=>'addition:'+x.id===a.ingId);
-        return `<option value="${esc(a.id)}" ${String(r.baseId)===String(a.id)?'selected':''}>${esc(match?.name||'Ingrediente eliminado')}</option>`;
-      }).join('');
-      return `<div class="variant-elab-row" data-elab-id="${esc(e.id)}" data-row-id="${esc(r.id)}">
-        <span class="field-hint">${r.type==='water'?'Agua (% s/ ingrediente)':'Ingrediente (% s/ harina)'}</span>
-        <select aria-label="Base de la fila" onchange="setVariantElabRow(this.closest('.variant-elab-row').dataset.elabId,this.closest('.variant-elab-row').dataset.rowId,'${r.type==='water'?'baseId':'ingId'}',this.value)">${options}</select>
-        <input aria-label="Porcentaje de elaboración" type="number" min="0" step="0.1" value="${esc(r.pct)}" oninput="setVariantElabRow(this.closest('.variant-elab-row').dataset.elabId,this.closest('.variant-elab-row').dataset.rowId,'pct',this.value)">
-        <button class="btn btn-ghost btn-icon" aria-label="Quitar fila" onclick="delVariantElabRow(this.closest('.variant-elab-row').dataset.elabId,this.closest('.variant-elab-row').dataset.rowId)">×</button></div>`;
+      const common=`data-elab-id="${esc(e.id)}" data-row-id="${esc(r.id)}"`;
+      const change=(field)=>`setVariantElabRow(this.closest('.variant-elab-row').dataset.elabId,this.closest('.variant-elab-row').dataset.rowId,'${field}',this.value)`;
+      const deleteButton=`<button class="btn btn-ghost btn-icon" aria-label="Quitar fila" onclick="delVariantElabRow(this.closest('.variant-elab-row').dataset.elabId,this.closest('.variant-elab-row').dataset.rowId)">×</button>`;
+      if(r.type==='water'){
+        const missing=r.baseId!=='all'&&!sources.some(x=>String(x.id)===String(r.baseId));
+        const options=`<option value="all"${r.baseId==='all'?' selected':''}>Todos los ingredientes de la elaboración</option>`
+          +sources.map(src=>{
+            const a=variantAdditions.find(x=>'addition:'+x.id===src.ingId);
+            return `<option value="${esc(src.id)}"${String(src.id)===String(r.baseId)?' selected':''}>${esc(a?.name||'Ingrediente eliminado')}</option>`;
+          }).join('')
+          +(missing?`<option value="${esc(r.baseId)}" selected>Ingrediente de referencia eliminado</option>`:'');
+        return `<div class="variant-elab-row variant-water-row" ${common}>
+          <div class="variant-water-label"><span aria-hidden="true">💧</span> Agua</div>
+          <input aria-label="Hidratación del agua en porcentaje" type="number" min="0" step="0.1" value="${esc(r.pct)}" oninput="${change('pct')}">
+          ${deleteButton}
+          <label class="field-hint variant-water-basis-label">Porcentaje de agua calculado sobre:</label>
+          <select class="variant-water-basis" aria-label="Base de hidratación del agua" onchange="${change('baseId')}">${options}</select>
+        </div>`;
+      }
+      const choices=variantAdditions.filter(a=>!isWaterName(a.name));
+      const invalid=!choices.some(a=>'addition:'+a.id===r.ingId);
+      const options=choices.map(a=>`<option value="${esc('addition:'+a.id)}"${r.ingId==='addition:'+a.id?' selected':''}>${esc(a.name||'Ingrediente sin nombre')}</option>`).join('')
+        +(invalid?`<option value="${esc(r.ingId)}" selected>Ingrediente eliminado o agua mal asignada</option>`:'');
+      return `<div class="variant-elab-row variant-solid-row" ${common}>
+        <label class="field-hint">Ingrediente (% sobre harina total)</label>
+        <select aria-label="Ingrediente de la elaboración" onchange="${change('ingId')}">${options}</select>
+        <input aria-label="Porcentaje del ingrediente en la elaboración" type="number" min="0" step="0.1" value="${esc(r.pct)}" oninput="${change('pct')}">
+        ${deleteButton}</div>`;
     }).join('');
     return `<div class="eeb" data-elab-id="${esc(e.id)}"><div class="eeb-header">
       <input class="eeb-name-input" type="text" aria-label="Nombre de elaboración" placeholder="Ej. Escaldado de semillas" value="${esc(e.name)}" oninput="setVariantElabName(this.closest('.eeb').dataset.elabId,this.value)">
@@ -285,6 +357,7 @@ function renderVariantElabs(){
       <div class="variant-elab-buttons"><button class="btn btn-xs" onclick="addVariantElabRow(this.closest('.eeb').dataset.elabId,'other')">+ Ingrediente</button>
       <button class="btn btn-xs" onclick="addVariantElabRow(this.closest('.eeb').dataset.elabId,'water')">+ Agua</button></div></div>`;
   }).join('')||'<div class="field-hint">Esta variante no tiene elaboraciones exclusivas.</div>';
+  refreshVariantWaterInfo();
 }
 function saveVariant(){
   const name=document.getElementById('variant_name').value.trim();
@@ -389,6 +462,7 @@ function importRecipeData(data){
   const imported=arr.map((r,ri)=>{
     const v=JSON.parse(JSON.stringify(r));v.id=ids.get(keys[ri]);
     if(v.baseId) v.baseId=ids.get(String(v.baseId))||v.baseId;
+    migrateVariantWaterRows(v);
     return v;
   });
   const pool=[...recipes,...imported];
@@ -433,4 +507,5 @@ function importJSON(){
 }
 
 loadProduction();
+migrateStoredVariantWaterRows();
 renderList();

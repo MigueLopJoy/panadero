@@ -1,4 +1,4 @@
-# Pan & Agua · V3: elaboraciones propias y producción global
+# Pan & Agua · V4: corrección de hidratación de elaboraciones y producción global
 
 Aplicación web estática de formulación panadera. Conserva el recetario original, las familias de panes, las calculadoras de amasado y de mezcla de aguas, e incorpora **elaboraciones previas exclusivas de las variantes** y **planes transversales que combinan panes de distintas familias o independientes**.
 
@@ -19,12 +19,12 @@ Después visita `http://localhost:8000`.
 1. Abre una masa base y crea una variante, o abre una variante y pulsa **Editar**.
 2. En **Ingredientes adicionales**, incorpora todos los ingredientes de la transformación, *incluida el agua que vaya a consumir cualquier escaldado*. Los porcentajes se refieren a la harina total de la fórmula.
 3. En **Elaboraciones previas propias**, pulsa **+ Elaboración**, escribe su nombre (por ejemplo, *Escaldado de semillas*), añade una fila de ingrediente y otra de agua.
-4. En la fila de ingrediente, selecciona uno de los adicionales y especifica qué porcentaje de ese ingrediente destinas a la elaboración, expresado sobre la harina de la receta. En la fila de agua, selecciona el ingrediente de esa elaboración sobre el cual se aplica el porcentaje de hidratación.
-5. Guarda la variante. Sus pestañas incluyen tanto las preelaboraciones heredadas (ya incorporadas a la masa base) como las propias, que se preparan aparte.
+4. En la fila de ingrediente, selecciona uno de los adicionales y especifica qué porcentaje de ese ingrediente destinas a la elaboración, expresado sobre la harina de la receta. El botón **+ Agua** crea una fila de agua independiente (no un selector de ingredientes). Indica el porcentaje de hidratación y selecciona como referencia **todos los ingredientes de la elaboración** o **un ingrediente concreto**. La primera opción suma la harina y/u otros ingredientes de esa elaboración.
+5. La cantidad de agua utilizada en una o varias elaboraciones **no puede superar el porcentaje de Agua declarado en los ingredientes adicionales** de la variante. El editor indica el consumo y el cálculo se bloquea si falta agua. Guarda la variante. Sus pestañas incluyen tanto las preelaboraciones heredadas (ya incorporadas a la masa base) como las propias, que se preparan aparte.
 
 **Ejemplo:** masa base con 100 % harina, 65 % agua, 2 % sal y 1 % levadura; variante con 20 % semillas + 20 % agua adicionales; escaldado de 20 % semillas con 100 % de agua sobre las semillas. Por cada 1.000 g de harina, se emplean 1.680 g de masa base y se prepara un escaldado de 400 g (200 g semillas y 200 g agua), para obtener 2.080 g de masa total. El agua del escaldado no se vuelve a mostrar como pendiente en la masa final.
 
-**Límite físico deliberado:** una preelaboración propia no puede sustraer ingredientes de la masa base **ya mezclada**. Si necesitas elaborar una preparación con harina o agua adicionales, añádelas primero como ingredientes específicos de la variante. El editor admite cantidades sobre cualquier ingrediente adicional, incluida harina añadida como ingrediente, y porcentajes de agua sobre ese ingrediente. Las elaboraciones tradicionales de harina de la masa base deben definirse en la receta base o producir la variante **desde cero**.
+**Límite físico deliberado:** una preelaboración propia no puede sustraer ingredientes de la masa base **ya mezclada**. Si necesitas elaborar una preparación con harina o agua adicionales, añádelas primero como ingredientes específicos de la variante. El editor admite cantidades sobre cualquier ingrediente adicional, incluida harina añadida como ingrediente, y porcentajes de agua sobre un ingrediente o sobre la suma de harina y demás ingredientes incorporados a la elaboración. El agua se añade siempre con su botón específico; no debe seleccionarse como otro ingrediente de esa elaboración. Las elaboraciones tradicionales de harina de la masa base deben definirse en la receta base o producir la variante **desde cero**.
 
 ## Planificación de producción desde fuera del recetario
 
@@ -56,6 +56,7 @@ El planificador produce siete hojas:
 
 - Las recetas existentes permanecen en `localStorage` bajo **`pan_v4`**, sin necesidad de migrarlas manualmente.
 - Los planes familiares de V2 se conservan en `pan_production_v1`; al inicializar por primera vez la V3, sus filas seleccionadas se copian a un plan global si todavía no hay planes globales.
+- Las variantes V3 que almacenaron agua como «Otro ingrediente» dentro de un escaldado se normalizan automáticamente si contienen sólidos de referencia, conservando exactamente los gramos de agua. Si faltan los sólidos, se conserva el registro sin convertirlo para que pueda corregirse manualmente.
 - Los nuevos planes se almacenan en **`pan_global_plans_v1`**. Los datos de las recetas son independientes de los de producción.
 - La importación JSON sigue aceptando recetas individuales, listas y paquetes de familias de V2. La importación de una familia antigua con plan incorpora sus filas a un plan global adicional, sin sobrescribir otros planes.
 - La exportación JSON de familias y de recetas individuales se mantiene. Guarda copias fuera del navegador para proteger tus fórmulas: borrar los datos del sitio también borra su almacenamiento local.
@@ -69,8 +70,11 @@ El planificador produce siete hojas:
 - `global-planner.js`: planes globales, persistencia separada, agrupación de masas y pantalla de planificación.
 - `excel-export.js`: serialización OpenXML y Excel de planes globales y legados.
 - `index.html`, `styles.css`: interfaz móvil.
-- `test.js`: pruebas de regresión y verificaciones de V3 (requiere `jsdom`).
+- `test.js`: pruebas de regresión y verificaciones de V4 (requiere `jsdom`).
+- `test-browser.py`: 28 verificaciones en Chromium (Playwright), sin `jsdom`, de la interfaz de agua y sus cálculos.
 - `ejemplo_recetas_v3.json`: conjunto de recetas importables con escaldado propio y pan independiente.
+- `ejemplo_hidratacion_v4.json`: ejemplo nuevo de agua al 100 % respecto a la suma de semillas y harina añadida.
+- `vista_hidratacion_v4.png`: captura del editor corregido en vista móvil.
 - `ejemplo_produccion_global.xlsx`: muestra real de un plan multirreceta con elaboraciones previas.
 
 ## Pruebas
@@ -82,4 +86,14 @@ npm install
 npm test
 ```
 
+Las verificaciones adicionales en Chromium pueden ejecutarse con Playwright para Python instalado:
+
+```bash
+python test-browser.py
+```
+
 El código de producción **no necesita `jsdom`**. Se ha validado adicionalmente en Chromium mediante pruebas funcionales del motor, la navegación y el editor de variantes. Se generó y verificó el XLSX de ejemplo, incluida su estructura y los resultados numéricos. Los pesos son de masa antes del horneado, sin estimar mermas.
+
+## Corrección V4: diferencia entre agua disponible y base de hidratación
+
+En una variante, el agua de una elaboración previa es un **consumo** de la fila «Agua» de sus ingredientes adicionales. El **porcentaje que escribes en la elaboración** expresa una proporción respecto a los sólidos elegidos: puedes elegir un ingrediente o «Todos los ingredientes de la elaboración» (harinas y demás ingredientes añadidos a esa elaboración). Por ejemplo, 20 % semillas + 10 % harina, con 100 % de agua sobre todos: requiere 30 % de agua adicional en la receta. Si solo declaras 25 % de agua adicional, se muestra un error y no permite guardar. Las elaboraciones previas de la masa base siguen perteneciendo a la propia masa base. Los planes y el Excel usan exactamente el mismo cálculo.

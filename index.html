@@ -355,7 +355,8 @@
       <div class="field-hint">Ej.: añadir 5 % de agua incrementa la hidratación de 65 % a 70 %.</div>
       <div class="section-hdr"><span>Elaboraciones previas propias</span><button class="btn btn-ghost btn-xs" onclick="addVariantElab()">+ Elaboración</button></div>
       <div id="variant_elabs"></div>
-      <div class="elab-hint">Para un escaldado, añade primero las semillas y el agua como ingredientes adicionales de la variante. En la elaboración, selecciona las semillas y después el agua con el porcentaje de hidratación deseado sobre esas semillas. Los ingredientes de la masa base ya están mezclados y no pueden utilizarse de nuevo.</div>
+      <div id="variant_water_info" class="field-hint" role="status" aria-live="polite"></div>
+      <div class="elab-hint">Para un escaldado, añade primero las semillas y el agua como ingredientes adicionales de la variante. En la elaboración, pulsa «+ Ingrediente» para asignar las semillas y «+ Agua» para crear una fila de agua. Elige si la hidratación se calcula sobre todos los ingredientes de la elaboración o sobre uno concreto. Los ingredientes de la masa base ya están mezclados y no pueden utilizarse de nuevo.</div>
     </div>
     <div class="modal-foot"><button class="btn" onclick="closeVariantEditor()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveVariant()">Guardar variante</button></div>
