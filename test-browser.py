@@ -180,6 +180,106 @@ with sync_playwright() as p:
  js("changeVariantMode('scratch')")
  ok(page.locator('#d_res_nav .res-tab').all_text_contents()==['Resumen','Masa madre','Masa final'],
     'V5 sin elaboraciones propias recupera Masa madre desde cero')
+ # ── V6: dos niveles adicionales de variantes, producción escalonada ──
+ js('''()=>{
+   const root={id:'trigo',name:'Masa original',flours:[{id:0,name:'Trigo',pct:100}],
+      ings:[{id:0,name:'Agua',pct:65},{id:1,name:'Sal',pct:2},{id:2,name:'Levadura',pct:1}],
+      elabs:[{id:'pref',name:'Poolish',ings:[{id:'pf',type:'flour',flourId:0,pct:20},{id:'pw',type:'water',pct:100}]}]};
+   const variant=(id,name,parent,add,elabs=[])=>({id,name,baseId:parent,additions:add.map(([n,p],j)=>({id:'a'+j,name:n,pct:p})),elabs,pieces:1,weight:1000});
+   const ch=variant('ch','Chapata','trigo',[['Agua',10]]);
+   const f=variant('fo','Focaccia básica','ch',[['Aceite',5]]);
+   const olives=variant('ol','Focaccia de aceitunas','fo',[['Aceitunas',10],['Agua',10]],
+     [{id:'soak',name:'Escaldado de aceitunas',ings:[{id:'os',type:'other',ingId:'addition:a0',pct:10},{id:'ow',type:'water',baseId:'all',pct:100}]}]);
+   const cheese=variant('qu','Focaccia de queso','fo',[['Queso',15]]);
+   recipes=[root,ch,f,olives,cheese];activeId='ol';save();renderList();showDetail();
+ }''')
+ hierarchy=js('''()=>{
+   const leaf=recipeById('ol'),c=calculateVariant(leaf,2030);
+   return {depth:recipeDepth(leaf),ancestry:recipeChain(leaf).map(x=>x.name),
+     parent:c.base.name,parentMass:c.baseMass,full:c.fullCalc.summaryRows,stage:c.stage,
+     grams:c.flourG,depthRoot:recipeDepth(recipeById('trigo'))};}''')
+ ok(hierarchy['depth']==3 and len(hierarchy['ancestry'])==4 and hierarchy['depthRoot']==0,
+   'V6 permite masa original → chapata → focaccia → sabores')
+ ok(abs(hierarchy['parentMass']-1830)<1e-5 and abs(hierarchy['grams']-1000)<1e-5,
+   'V6 focaccia de aceitunas necesita 1830 g de focaccia básica')
+ ok(abs(next(x['grams'] for x in hierarchy['full'] if x['name']=='Agua')-850)<1e-5 and
+    abs(next(x['grams'] for x in hierarchy['full'] if x['name']=='Aceite')-50)<1e-5,
+   'V6 herencia de agua desde chapata y aceite desde focaccia')
+ ok(abs(hierarchy['stage']['elabCalcs'][0]['total']-200)<1e-5 and
+   abs(hierarchy['stage']['waterRemaining'])<1e-5,
+   'V6 escaldado exclusivo de la variante final sin duplicar agua')
+ ok(page.locator('#d_res_nav .res-tab').all_text_contents()==['Resumen','Escaldado de aceitunas','Masa final'],
+   'V6 modo masa anterior oculta las preelaboraciones heredadas')
+ js("changeVariantMode('scratch')")
+ ok(page.locator('#d_res_nav .res-tab').all_text_contents()==['Resumen','Poolish','Escaldado de aceitunas','Masa final'],
+   'V6 desde cero recupera el poolish original y escaldado final')
+ js("changeVariantMode('base');activeId='fo';renderFamilyActions()")
+ ok(page.locator('#det_family_actions').get_by_text('+ Nueva variante de este pan').count()==1,
+   'V6 crear derivadas desde otra variante con botón específico')
+ js("openVariantEditor(null,'fo')")
+ ok(page.locator('#variant_base_label').inner_text().casefold()=='focaccia básica' and
+    'Aceite' in page.locator('#variant_inherited').inner_text(),
+   'V6 editor hereda ingredientes de todos los ancestros')
+ js('closeVariantEditor()')
+ js("activeId='ol';renderFamilyActions()")
+ ok(page.locator('#det_family_actions').get_by_text('+ Nueva variante de este pan').count()==0,
+    'V6 se impide crear un cuarto nivel de derivación')
+ rows={'ol':{'pieces':1,'weight':2030,'mode':'base'},'qu':{'pieces':1,'weight':1980,'mode':'base'},
+       'fo':{'pieces':1,'weight':1830,'mode':'base'},'ch':{'pieces':1,'weight':1780,'mode':'base'}}
+ plan=js('''(rows)=>{
+   const p=calculateGlobalProduction({name:'Focaccias',rows,extras:{}});
+   return {mass:p.productMass,bought:p.purchasedMass,
+     groups:p.groups.map(g=>({name:g.base.name,required:g.required,total:g.totalBase,add:g.added,
+         parent:g.parent&&g.parent.name})),ingredientRows:p.ingredientRows,
+     sheets:globalProductionWorkbookData(p).map(s=>({name:s.name,rows:s.rows}))};
+ }''',rows)
+ groups={g['name']:g for g in plan['groups']}
+ ok(abs(plan['mass']-7620)<1e-5 and abs(plan['bought']-7620)<1e-5,
+    'V6 cuatro productos con un único árbol de amasados conservan 7620 g')
+ ok(len(plan['groups'])==5 and abs(groups['Focaccia básica']['required']-5490)<1e-5 and
+    abs(groups['Chapata']['required']-7120)<1e-5 and abs(groups['Masa original']['required']-6720)<1e-5,
+    'V6 agrupa focaccia, chapata y masa original sin doble contabilidad')
+ ok(abs(sum(x['grams'] for x in plan['ingredientRows'])-7620)<1e-5 and
+    abs(next(x['grams'] for x in plan['ingredientRows'] if x['name']=='Aceite')-150)<1e-5,
+    'V6 aprovisionamiento: aceite se añade una vez al nivel focaccia')
+ workbook={s['name']:s['rows'] for s in plan['sheets']}
+ ok(len(workbook)==7 and sum(1 for r in workbook['Elaboraciones'] if len(r)>2 and r[2]=='Poolish')==2 and
+    sum(1 for r in workbook['Elaboraciones'] if len(r)>2 and r[2]=='Escaldado de aceitunas')==2,
+    'V6 Excel documenta cada preelaboración una sola vez (filas de ingredientes)')
+ groupExtra=js('''(rows)=>{const p=calculateGlobalProduction({name:'Extra focaccia',rows,
+    extras:{fo:100}});return {mass:p.productMass,bought:p.purchasedMass,extra:p.extraMass,
+    parts:p.groups.map(g=>[g.base.id,g.totalBase])};}''',rows)
+ ok(abs(groupExtra['mass']-7620)<1e-5 and abs(groupExtra['bought']-7720)<1e-5 and
+    abs(groupExtra['extra']-100)<1e-5,
+    'V6 excedente en masa intermedia propaga sus necesidades a todos los ancestros')
+ scratch=js('''()=>{const p=calculateGlobalProduction({name:'Desde cero',rows:{ol:{pieces:1,weight:2030,mode:'scratch'}},extras:{}});
+ return {groups:p.groups.length,bought:p.purchasedMass,calc:p.items[0].calc.elabCalcs.map(e=>e.name)};}''')
+ ok(scratch['groups']==0 and abs(scratch['bought']-2030)<1e-5 and scratch['calc']==['Poolish','Escaldado de aceitunas'],
+    'V6 desde cero no genera amasados compartidos, sí todas las preelaboraciones')
+ cycle=js('''()=>{const r=recipeById('ch'),old=r.baseId;r.baseId='ol';
+ try{calculateVariant(r,1780);return 'NO ERROR'}catch(e){return e.message}finally{r.baseId=old}}''')
+ ok('circular' in cycle.lower(),'V6 bloquea herencia circular')
+ too_deep=js('''()=>{const a={id:'d4',name:'Nivel prohibido',baseId:'ol',additions:[],elabs:[]};
+ try{calculateVariant(a,2030);return 'NO ERROR'}catch(e){return e.message}}''')
+ ok('niveles' in too_deep.lower() or 'derivaciones' in too_deep.lower(),'V6 limita la profundidad')
+ # Receta base cambiada -> derivaciones dinámicas.
+ new_water=js('''()=>{const r=recipeById('trigo');r.ings[0].pct=67;
+ const c=calculateVariant(recipeById('ol'),2050);
+ r.ings[0].pct=65;
+ return c.fullCalc.summaryRows.find(x=>x.name==='Agua').grams/c.flourG*100;}''')
+ ok(abs(new_water-87)<1e-5,'V6 cambios en origen actualizan la hidratación de todos los descendientes')
+ # Importación autocontenida y referencias remapeadas si ya existe la familia.
+ importResult=js('''()=>{
+    const current=recipes.slice();const format={format:'pan-agua-family-v1',recipes:JSON.parse(JSON.stringify(current))};
+    const count=importRecipeData(format);return {count,added:recipes.slice(current.length).map(x=>({id:x.id,baseId:x.baseId,name:x.name}))};
+ }''')
+ ok(importResult['count']==5 and len(importResult['added'])==5 and
+    all(x['id'] not in ['trigo','ch','fo','ol','qu'] for x in importResult['added']),
+    'V6 importación de familias de cuatro generaciones remapea IDs')
+ imported=js('''()=>{const v=recipes[recipes.length-2];
+  const c=calculateVariant(v,2030);return {root:getFamilyRoot(v).name,depth:recipeDepth(v),weight:c.totalMass};}''')
+ ok(imported['root']=='Masa original' and imported['depth']==3 and abs(imported['weight']-2030)<1e-5,
+   'V6 familia importada conserva vínculos y cálculos entre generaciones')
  ok(not errors,'sin errores JavaScript de navegador: '+str(errors))
  print(f'\n{checks} COMPROBACIONES CORRECTAS')
  browser.close()

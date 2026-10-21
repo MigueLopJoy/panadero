@@ -164,7 +164,7 @@ let rejected=false;try{V3.calculateVariant(withoutWater,1880);}catch(e){rejected
 ok('V3 no extrae agua de masa base para escaldar',rejected);
 const planV3={id:'plan-v3',name:'Mi producción',rows:{own:{pieces:4,weight:1000,mode:'base'},c:{pieces:2,weight:700,mode:'base'},integral:{pieces:2,weight:800,mode:'scratch'}},extras:{b:500}};
 const global=V3.calculateGlobalProduction(planV3);
-ok('V3 plan mezcla familia e independiente',global.items.length===3&&global.groups.length===2);
+ok('V3 plan mezcla familia e independiente',global.items.length===3&&global.groups.length===4);
 ok('V3 conservación de masa global + excedente',near(global.productMass,7000)&&near(global.purchasedMass,7500));
 ok('V3 escaldado permanece ligado a una sola variante',global.items.find(i=>i.recipe.id==='own').stage.elabCalcs.length===1&&global.groups.find(g=>g.base.id==='b').baseCalc.elabCalcs.length===0);
 ok('V3 Excel siete hojas y escaldado de variante',V3.globalProductionWorkbookData(global).length===7&&
@@ -280,5 +280,25 @@ ok('V5 sin elaboraciones propias: solo Resumen y Masa final',
 MB.__x('changeVariantMode("scratch")');
 ok('V5 desde cero recupera Masa madre sin elaboraciones propias',
   [...MB.document.querySelectorAll('#d_res_nav .res-tab')].map(x=>x.textContent).join('|')==='Resumen|Masa madre|Masa final');
+
+// ── TESTS V6: variantes de variantes y producción por etapas ──
+const treeRoot={id:'tree-root',name:'Masa blanca',flours:[{id:0,name:'Trigo',pct:100}],
+  ings:[{id:0,name:'Agua',pct:65},{id:1,name:'Sal',pct:2},{id:2,name:'Levadura',pct:1}],elabs:[]};
+const treeCh={id:'tree-ch',name:'Chapata',baseId:'tree-root',additions:[{id:'water',name:'Agua',pct:10}],elabs:[]};
+const treeFo={id:'tree-fo',name:'Focaccia',baseId:'tree-ch',additions:[{id:'oil',name:'Aceite',pct:5}],elabs:[]};
+const treeOl={id:'tree-ol',name:'Aceitunas',baseId:'tree-fo',additions:[{id:'ol',name:'Aceitunas',pct:10},{id:'water',name:'Agua',pct:10}],elabs:[{id:'soak',name:'Escaldado',ings:[{id:'os',type:'other',ingId:'addition:ol',pct:10},{id:'ow',type:'water',pct:100,baseId:'all'}]}]};
+const treeCheese={id:'tree-cheese',name:'Queso',baseId:'tree-fo',additions:[{id:'ch',name:'Queso',pct:15}],elabs:[]};
+const TW=boot([treeRoot,treeCh,treeFo,treeOl,treeCheese]);const T=TW.__s;
+let nested=T.calculateVariant(treeOl,2030);
+ok('V6 tres derivaciones: 1830 g de focaccia y 200 g de adiciones',near(nested.baseMass,1830)&&near(nested.totalMass,2030)&&near(nested.stage.elabCalcs[0].total,200));
+ok('V6 herencia completa de agua y aceite',near(nested.fullCalc.summaryRows.find(x=>x.name==='Agua').grams,850)&&near(nested.fullCalc.summaryRows.find(x=>x.name==='Aceite').grams,50));
+const nestedPlan=T.calculateGlobalProduction({name:'Multinivel',rows:{'tree-ol':{pieces:1,weight:2030,mode:'base'},'tree-cheese':{pieces:1,weight:1980,mode:'base'},'tree-fo':{pieces:1,weight:1830,mode:'base'},'tree-ch':{pieces:1,weight:1780,mode:'base'}},extras:{}});
+ok('V6 agrupa los amasados de chapata y focaccia',near(nestedPlan.groups.find(x=>x.base.id==='tree-fo').required,5490)&&near(nestedPlan.groups.find(x=>x.base.id==='tree-ch').required,7120));
+ok('V6 masa total sin duplicación de ingredientes',near(nestedPlan.productMass,7620)&&near(nestedPlan.purchasedMass,7620));
+let cycleMsg=TW.__x('(()=>{const x=recipes.find(r=>r.id==="tree-ch");x.baseId="tree-ol";try{calculateVariant(x,1780);return "";}catch(e){return e.message;}finally{x.baseId="tree-root";}})()');
+ok('V6 detecta ciclos entre generaciones',/circular/i.test(cycleMsg));
+let depthMsg=TW.__x('(()=>{try{calculateVariant({id:"too-deep",name:"Profunda",baseId:"tree-ol",additions:[],elabs:[]},2030);return "";}catch(e){return e.message;}})()');
+ok('V6 bloquea cuarta derivación',/niveles|derivaciones/i.test(depthMsg));
+ok('V6 Excel siete hojas con la familia completa',T.globalProductionWorkbookData(nestedPlan).length===7);
 
 console.log(fails?fails+' FALLOS':'TODO OK');

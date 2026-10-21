@@ -1,0 +1,154 @@
+{
+  "format": "pan-agua-family-v1",
+  "recipes": [
+    {
+      "id": "demo-trigo",
+      "name": "Masa blanca para chapatas",
+      "notes": "Receta original con poolish",
+      "pieces": 1,
+      "weight": 1680,
+      "flours": [
+        {
+          "id": 0,
+          "name": "Harina de trigo",
+          "pct": 100
+        }
+      ],
+      "ings": [
+        {
+          "id": 0,
+          "name": "Agua",
+          "pct": 65
+        },
+        {
+          "id": 1,
+          "name": "Sal",
+          "pct": 2
+        },
+        {
+          "id": 2,
+          "name": "Levadura",
+          "pct": 1
+        }
+      ],
+      "elabs": [
+        {
+          "id": "poolish",
+          "name": "Poolish",
+          "ings": [
+            {
+              "id": "pf",
+              "type": "flour",
+              "flourId": 0,
+              "pct": 20
+            },
+            {
+              "id": "pw",
+              "type": "water",
+              "pct": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo-chapata",
+      "name": "Masa de chapata",
+      "baseId": "demo-trigo",
+      "additions": [
+        {
+          "id": "cw",
+          "name": "Agua",
+          "pct": 10
+        }
+      ],
+      "elabs": [],
+      "pieces": 1,
+      "weight": 1780
+    },
+    {
+      "id": "demo-focaccia",
+      "name": "Focaccia básica",
+      "baseId": "demo-chapata",
+      "additions": [
+        {
+          "id": "oil",
+          "name": "Aceite de oliva",
+          "pct": 5
+        }
+      ],
+      "elabs": [],
+      "pieces": 1,
+      "weight": 1830
+    },
+    {
+      "id": "demo-aceitunas",
+      "name": "Focaccia de aceitunas",
+      "baseId": "demo-focaccia",
+      "additions": [
+        {
+          "id": "ol",
+          "name": "Aceitunas",
+          "pct": 10
+        },
+        {
+          "id": "ow",
+          "name": "Agua",
+          "pct": 10
+        }
+      ],
+      "elabs": [
+        {
+          "id": "olsoak",
+          "name": "Escaldado de aceitunas",
+          "ings": [
+            {
+              "id": "ols",
+              "type": "other",
+              "ingId": "addition:ol",
+              "pct": 10
+            },
+            {
+              "id": "olw",
+              "type": "water",
+              "baseId": "all",
+              "pct": 100
+            }
+          ]
+        }
+      ],
+      "pieces": 1,
+      "weight": 2030
+    },
+    {
+      "id": "demo-queso",
+      "name": "Focaccia de queso",
+      "baseId": "demo-focaccia",
+      "additions": [
+        {
+          "id": "ch",
+          "name": "Queso",
+          "pct": 15
+        }
+      ],
+      "elabs": [],
+      "pieces": 1,
+      "weight": 1980
+    },
+    {
+      "id": "demo-chorizo",
+      "name": "Focaccia de chorizo",
+      "baseId": "demo-focaccia",
+      "additions": [
+        {
+          "id": "cho",
+          "name": "Chorizo",
+          "pct": 20
+        }
+      ],
+      "elabs": [],
+      "pieces": 1,
+      "weight": 2030
+    }
+  ]
+}

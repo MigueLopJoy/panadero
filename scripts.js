@@ -63,10 +63,15 @@ function importJSON(){
 }
 
 function exportCurrent(){
-  const r=recipes.find(x=>x.id===activeId); if(!r) return;
+  const r=recipes.find(x=>x.id===activeId);if(!r)return;
+  // Una variante depende de toda la cadena de ascendientes. Exportarla sola
+  // produciría un JSON imposible de calcular tras importar en otro navegador.
+  if(typeof exportCurrentFamily==='function'&&(r.baseId||recipes.some(x=>String(x.baseId)===String(r.id)))){
+    exportCurrentFamily();return;
+  }
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([JSON.stringify(r,null,2)],{type:'application/json'}));
-  a.download=(r.name||'receta').replace(/\s+/g,'_')+'.json'; a.click();
+  a.download=(r.name||'receta').replace(/\s+/g,'_')+'.json';a.click();
 }
 
 // ═══════════════════════════════════════

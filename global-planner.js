@@ -33,17 +33,18 @@ function saveGlobalPlans(){
   catch(e){alert('No se ha podido guardar la planificación.');}
 }
 function activeGlobalPlan(){return globalPlans[currentGlobalPlanId];}
-function globalPlanItemLabel(r){return r.name+(r.baseId?' · variante de '+(recipes.find(x=>x.id===r.baseId)?.name||'base no disponible'):' · receta independiente');}
+function globalPlanItemLabel(r){return r.name+(r.baseId?' · deriva de '+(recipeById(r.baseId)?.name||'receta no disponible'):' · receta original');}
 function calculateGlobalProduction(plan){
   if(!plan||!plan.rows||typeof plan.rows!=='object')throw Error('El plan de producción no es válido.');
-  const items=[],groupMap=new Map();
-  const ensureGroup=base=>{
-    if(!groupMap.has(base.id))groupMap.set(base.id,{base,required:0,extra:0,items:[],variantItems:[],directItems:[]});
-    return groupMap.get(base.id);
+  const items=[],demand=new Map();
+  const ensure=(r)=>{
+    const key=String(r.id);
+    if(!demand.has(key))demand.set(key,{base:r,required:0,extra:0,items:[],variantItems:[],directItems:[]});
+    return demand.get(key);
   };
   for(const [id,row] of Object.entries(plan.rows)){
-    const r=recipes.find(x=>String(x.id)===id);
-    if(!r)throw Error('El plan incluye una receta que ya no existe. Elimínala del plan.');
+    const r=recipeById(id);
+    if(!r)throw Error('El plan incluye una receta eliminada. Retírala del plan.');
     const pieces=Number(row.pieces),weight=Number(row.weight);
     if(!Number.isSafeInteger(pieces)||pieces<1||!Number.isFinite(weight)||weight<=0)
       throw Error('Cantidad no válida en «'+r.name+'».');
@@ -54,40 +55,57 @@ function calculateGlobalProduction(plan){
       const mode=row.mode==='scratch'?'scratch':'base';
       const item={...c,recipe:r,type:'variant',mode,pieces,weight,totalMass,calc:c.fullCalc};items.push(item);
       if(mode==='base'){
-        const group=ensureGroup(c.base);group.required+=c.baseMass;group.items.push(item);group.variantItems.push(item);
+        const g=ensure(r);g.required+=totalMass;g.items.push(item);g.variantItems.push(item);
       }
     }else{
       const c=calculateRecipeFormula(r,totalMass);
       const item={recipe:r,type:'independent',mode:'scratch',pieces,weight,totalMass,calc:c};items.push(item);
-      const group=ensureGroup(r);group.required+=totalMass;group.items.push(item);group.directItems.push(item);
+      const g=ensure(r);g.required+=totalMass;g.items.push(item);g.directItems.push(item);
     }
   }
+  // Propagación inversa de demanda: productos finales -> masas intermedias -> raíz.
+  // Un nodo se amasa una sola vez incluso si lo consumen varios descendientes.
   const groups=[];
-  for(const group of groupMap.values()){
-    group.extra=Number(plan.extras?.[group.base.id]||0);
-    if(!Number.isFinite(group.extra)||group.extra<0)throw Error('El excedente de «'+group.base.name+'» debe ser positivo o cero.');
-    group.totalBase=group.required+group.extra;
-    group.baseCalc=calculateRecipeFormula(group.base,group.totalBase);
-    groups.push(group);
+  while(demand.size){
+    const candidates=[...demand.values()];
+    candidates.sort((a,b)=>recipeDepth(b.base)-recipeDepth(a.base));
+    const g=candidates[0];demand.delete(String(g.base.id));
+    g.extra=Number(plan.extras?.[g.base.id]||0);
+    if(!Number.isFinite(g.extra)||g.extra<0)throw Error('El excedente de «'+g.base.name+'» debe ser positivo o cero.');
+    g.totalBase=g.required+g.extra;
+    if(g.base.baseId){
+      const c=calculateVariant(g.base,g.totalBase);
+      g.stage=c.stage;g.parentMass=c.baseMass;g.added=c.added;
+      g.baseCalc=c.fullCalc;g.parent=c.base;g.mode='transform';
+      const parent=ensure(c.base);
+      parent.required+=c.baseMass;
+      for(const i of g.items)if(!parent.items.includes(i))parent.items.push(i);
+    }else{
+      g.baseCalc=calculateRecipeFormula(g.base,g.totalBase);
+      g.mode='root';g.stage=null;g.parent=null;g.added=[];
+    }
+    groups.push(g);
   }
-  const productMass=items.reduce((s,i)=>s+i.totalMass,0);
-  const extraMass=groups.reduce((s,g)=>s+g.extra,0);
+  groups.sort((a,b)=>recipeDepth(a.base)-recipeDepth(b.base));
+  const productMass=items.reduce((sum,i)=>sum+i.totalMass,0);
+  const extraMass=groups.reduce((sum,g)=>sum+g.extra,0);
   const ingredients=new Map();
-  function add(name,grams){
+  const add=(name,grams)=>{
     const key=String(name).trim().toLocaleLowerCase('es');
     if(!ingredients.has(key))ingredients.set(key,{name,grams:0});
     ingredients.get(key).grams+=grams;
+  };
+  // Los ingredientes de cada etapa solo se compran una vez; la masa heredada
+  // de una etapa anterior NO es materia prima nueva.
+  for(const g of groups){
+    if(g.mode==='root')g.baseCalc.summaryRows.forEach(x=>add(x.name,x.grams));
+    else g.added.forEach(a=>add(a.name,a.grams));
   }
-  for(const group of groups){
-    group.baseCalc.summaryRows.forEach(x=>add(x.name,x.grams));
-    group.variantItems.forEach(i=>i.added.forEach(a=>add(a.name,a.grams)));
-  }
-  // Las variantes hechas desde cero se contabilizan fuera del amasado común.
   items.filter(i=>i.type==='variant'&&i.mode==='scratch').forEach(i=>i.calc.summaryRows.forEach(x=>add(x.name,x.grams)));
-  const ingredientRows=Array.from(ingredients.values());
-  const purchasedMass=ingredientRows.reduce((s,x)=>s+x.grams,0);
+  const ingredientRows=[...ingredients.values()];
+  const purchasedMass=ingredientRows.reduce((sum,i)=>sum+i.grams,0);
   if(Math.abs(purchasedMass-productMass-extraMass)>0.00001)
-    throw Error('Error de conservación de masa en la planificación global.');
+    throw Error('Error de conservación de masa en el plan de producción por etapas.');
   return {plan,items,groups,productMass,extraMass,ingredientRows,purchasedMass};
 }
 function openGlobalPlanner(recipeId=null){
@@ -150,7 +168,7 @@ function renderGlobalPlanner(){
     return `<div class="plan-item" data-id="${esc(id)}">
       <div class="plan-item-head"><strong>${esc(r?.name||'Receta eliminada')}</strong><button class="btn btn-danger btn-xs" onclick="removeGlobalPlanRow(this.closest('.plan-item').dataset.id)">Quitar</button></div>
       ${r?.baseId?`<label class="lbl">Preparación</label><select class="plan-mode-select" onchange="setGlobalPlanRow(this.closest('.plan-item').dataset.id,'mode',this.value)">
-        <option value="base" ${row.mode!=='scratch'?'selected':''}>Desde masa base compartida</option>
+        <option value="base" ${row.mode!=='scratch'?'selected':''}>Desde masa anterior compartida</option>
         <option value="scratch" ${row.mode==='scratch'?'selected':''}>Desde cero (amasado independiente)</option></select>`:''}
       <div class="prod-grid"><div class="field field-flush"><label class="lbl">Nº piezas</label>
       <input type="number" min="1" step="1" value="${esc(row.pieces)}" oninput="setGlobalPlanRow(this.closest('.plan-item').dataset.id,'pieces',this.value)"></div>
@@ -170,19 +188,25 @@ function renderGlobalResults(){
   let h=`<div class="plan-kpis"><div class="stat"><div class="stat-lbl">Masa final de panes</div><div class="stat-val">${g1(calc.productMass)} g</div></div>
   <div class="stat"><div class="stat-lbl">Masas por preparar (incluye extra)</div><div class="stat-val">${g1(calc.purchasedMass)} g</div></div></div>`;
   for(const g of calc.groups){
-    h+=`<div class="card"><div class="card-hdr">Amasado conjunto · ${esc(g.base.name)}</div>
-    ${massRow('Masa necesaria para los panes',g.required)}
+    h+=`<div class="card"><div class="card-hdr">${g.mode==='root'?'Amasado original':'Masa derivada'} · ${esc(g.base.name)}</div>
+    ${g.parent?massRow('Masa anterior: '+g.parent.name,g.parentMass):''}
+    ${massRow('Masa necesaria para productos y derivados',g.required)}
     <div class="field"><label class="lbl">Excedente sin asignar (g)</label>
       <input type="number" min="0" step="0.1" data-base-id="${esc(g.base.id)}" value="${esc(activeGlobalPlan().extras?.[g.base.id]??0)}" onchange="setGlobalExtra(this.dataset.baseId,this.value)"></div>
     ${massRow('Masa total a preparar',g.totalBase)}
     <div class="field-hint">${g.items.map(i=>esc(i.recipe.name)).join(' · ')}</div>`;
-    if(g.baseCalc.elabCalcs.length){
-      h+='<div class="section-hdr">Elaboraciones previas de esta masa</div>';
-      for(const e of g.baseCalc.elabCalcs){h+=`<strong>${esc(e.name)}</strong>`;e.ings.forEach(x=>{h+=massRow(x.name,x.grams);});h+=massRow('Total '+e.name,e.total);}
+    const elabs=g.mode==='transform'?g.stage.elabCalcs:g.baseCalc.elabCalcs;
+    if(elabs.length){
+      h+='<div class="section-hdr">Elaboraciones previas de esta etapa</div>';
+      for(const e of elabs){h+=`<strong>${esc(e.name)}</strong>`;e.ings.forEach(x=>h+=massRow(x.name,x.grams));h+=massRow('Total '+e.name,e.total);}
     }
-    h+='<div class="section-hdr">Ingredientes de la masa conjunta</div>';
-    g.baseCalc.summaryRows.forEach(x=>h+=massRow(x.name,x.grams));
-    if(g.baseCalc.amasadoData.waterMass>0.00001)h+=`<button class="btn btn-sm" data-id="${esc(g.base.id)}" onclick="sendGlobalBaseToAmasado(this.dataset.id)">Temperatura de amasado</button>`;
+    h+='<div class="section-hdr">Incorporaciones de esta etapa</div>';
+    if(g.mode==='transform'){
+      g.stage.finalRows.filter(x=>x.final>0.000001).forEach(x=>h+=massRow(x.name,x.final));
+      elabs.forEach(e=>h+=massRow('Preelaboración: '+e.name,e.total));
+    }else g.baseCalc.summaryRows.forEach(x=>h+=massRow(x.name,x.grams));
+    const waterMass=g.mode==='transform'?g.stage.waterRemaining:g.baseCalc.amasadoData.waterMass;
+    if(waterMass>0.00001)h+=`<button class="btn btn-sm" data-id="${esc(g.base.id)}" onclick="sendGlobalBaseToAmasado(this.dataset.id)">Temperatura de amasado</button>`;
     h+='</div>';
   }
   h+='<div class="card"><div class="card-hdr">Desglose por pan</div>';
@@ -214,7 +238,7 @@ function renderGlobalResults(){
 function sendGlobalBaseToAmasado(baseId){
   let calc;try{calc=calculateGlobalProduction(activeGlobalPlan());}catch(e){alert(e.message);return;}
   const g=calc.groups.find(g=>String(g.base.id)===String(baseId));if(!g)return;
-  const data=g.baseCalc.amasadoData;
+  const data=g.mode==='transform'?{recipeName:g.base.name,waterMass:g.stage.waterRemaining,ings:[{name:'Masa anterior: '+g.parent.name,mass:g.parentMass,temp:20},...g.stage.finalRows.filter(x=>x.tag!=='water'&&x.final>0).map(x=>({name:x.name,mass:x.final,temp:20})),...g.stage.elabCalcs.filter(e=>e.total>0).map(e=>({name:'Elaboración: '+e.name,mass:e.total,temp:20}))]}:g.baseCalc.amasadoData;
   if(data.waterMass<=0){alert('No hay agua nueva para este amasado.');return;}
   aIngs=data.ings.map(i=>({id:aIngId++,...i}));
   document.getElementById('a_wm').value=data.waterMass;
